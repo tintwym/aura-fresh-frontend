@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Aura Fresh">
+  <rect width="64" height="64" rx="14" fill="#10B981"/>
+  <!-- shopping bag -->
+  <path fill="#FFFFFF" d="M18 24.5c0-1.1.9-2 2-2h24c1.1 0 2 .9 2 2v26.2c0 2.1-1.7 3.8-3.8 3.8H21.8c-2.1 0-3.8-1.7-3.8-3.8V24.5z"/>
+  <!-- bag mouth cut -->
+  <path fill="#10B981" d="M22 24.5h20v3.2c0 1.5-1.2 2.8-2.8 2.8H24.8c-1.5 0-2.8-1.2-2.8-2.8V24.5z"/>
+  <!-- left handle -->
+  <path fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" d="M26 24.2c0-5.2 3-8.6 6-8.6"/>
+  <!-- right handle + leaf -->
+  <path fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" d="M38 24.2c0-4.2 2.2-7.4 4.6-8.2"/>
+  <path fill="#FFFFFF" d="M41.2 9.2c3.8-.2 7.2 2.4 7.6 5.8.3 2.6-1.2 4.6-3.4 5.4-1.4-2.8-3.4-4.8-5.8-6.2.2-1.7.8-3.4 1.6-5z"/>
+  <path fill="none" stroke="#10B981" stroke-width="1.2" stroke-linecap="round" d="M43.2 12.4c1.4 1.6 2.6 3.6 3.2 5.6"/>
+</svg>
