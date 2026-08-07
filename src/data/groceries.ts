@@ -168,7 +168,7 @@ export const INITIAL_GROCERIES: GroceryItem[] = [
     category: 'Bakery',
     price: 8900,
     currency: 'MMK',
-    imageUrl: 'https://images.unsplash.com/photo-1517881917430-e70dfb3610aa?auto=format&fit=crop&w=600&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?auto=format&fit=crop&w=600&q=80',
     stock: 3, // low stock alert!
     maxStock: 15,
     availabilityZone: 'Bahan',
