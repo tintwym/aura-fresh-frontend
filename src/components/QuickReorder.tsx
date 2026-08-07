@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, ShoppingBag, Plus } from 'lucide-react';
+import { RefreshCw, Plus } from 'lucide-react';
 import { GroceryItem } from '../types';
 import { motion } from 'motion/react';
 
@@ -16,7 +16,6 @@ export default function QuickReorder({
   onAddToCart,
   onAddToast
 }: QuickReorderProps) {
-  // Map and sort groceries by purchase count, descending. Only show those with count > 0.
   const reorderItems = groceries
     .map(g => ({ ...g, count: purchaseCounts[g.id] || 0 }))
     .filter(g => g.count > 0)
@@ -42,7 +41,7 @@ export default function QuickReorder({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-emerald-500/10 dark:bg-emerald-950/20 rounded-lg text-emerald-500">
-            <RefreshCw className="w-4 h-4 animate-spin-slow text-emerald-400" />
+            <RefreshCw className="w-4 h-4 text-emerald-400" />
           </div>
           <div>
             <h3 className="font-display font-extrabold text-sm md:text-base text-slate-800 dark:text-white">
@@ -55,21 +54,21 @@ export default function QuickReorder({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {reorderItems.map((item) => (
           <motion.div
             key={item.id}
             whileHover={{ y: -2 }}
-            className="p-3 bg-slate-50 dark:bg-[#161616] border border-slate-100 dark:border-white/5 rounded-2xl flex items-center gap-3 relative overflow-hidden group"
+            className="p-3 bg-slate-50 dark:bg-[#161616] border border-slate-100 dark:border-white/5 rounded-2xl flex items-start gap-3 group"
           >
             <img
               src={item.imageUrl}
               alt={item.name}
-              className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200/40 dark:border-white/5"
+              className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200/40 dark:border-white/5"
               referrerPolicy="no-referrer"
             />
             <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-xs text-slate-800 dark:text-white truncate" title={item.name}>
+              <h4 className="font-bold text-xs text-slate-800 dark:text-white leading-snug line-clamp-2">
                 {item.name}
               </h4>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">

@@ -4,7 +4,6 @@ import {
   Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight
 } from 'lucide-react';
 import { UserProfile, DeliveryAddress, PaymentMethod, Order } from '../types';
-import { INITIAL_GROCERIES } from '../data/groceries';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BarChart,
@@ -72,79 +71,15 @@ export default function UserProfileModal({
     apple: false
   });
 
-  // Calculate order history list and filter counts
+  // Real orders only (API + in-session profile history)
   const allOrdersList = useMemo(() => {
-    const mockList: Order[] = [
-      {
-        id: 'ORD_928101',
-        items: [
-          { item: INITIAL_GROCERIES[0], quantity: 1, isSubscription: false },
-          { item: INITIAL_GROCERIES[1], quantity: 2, isSubscription: false }
-        ],
-        totalAmount: 26100,
-        currency: 'MMK',
-        paymentMethod: { id: 'p1', type: 'kbzpay', accountName: 'Thura Kyaw', accountNumber: '09975112233', isDefault: true },
-        deliveryAddress: { id: 'a1', name: 'Home', addressLine: 'Room 1402, Yankin Tower A', city: 'Yangon', state: 'Yangon Region', zipCode: '11201', phone: '09975112233', isDefault: true },
-        status: 'out_for_delivery',
-        createdAt: 'Today, 10:15 AM',
-        deliveryLat: 16.82,
-        deliveryLng: 96.15,
-        step: 2,
-        estimatedDeliveryWindow: '10:45 AM – 11:05 AM (Yankin)'
-      },
-      {
-        id: 'ORD_817290',
-        items: [
-          { item: INITIAL_GROCERIES[5], quantity: 2, isSubscription: true, frequency: 'weekly' }
-        ],
-        totalAmount: 24000,
-        currency: 'MMK',
-        paymentMethod: { id: 'p2', type: 'wavepay', accountName: 'Thura Kyaw', accountNumber: '09450001122', isDefault: false },
-        deliveryAddress: { id: 'a1', name: 'Home', addressLine: 'Room 1402, Yankin Tower A', city: 'Yangon', state: 'Yangon Region', zipCode: '11201', phone: '09975112233', isDefault: true },
-        status: 'delivered',
-        createdAt: 'Yesterday, 4:30 PM',
-        deliveryLat: 16.82,
-        deliveryLng: 96.15,
-        step: 3,
-        estimatedDeliveryWindow: '4:55 PM – 5:15 PM'
-      },
-      {
-        id: 'ORD_710922',
-        items: [
-          { item: INITIAL_GROCERIES[2], quantity: 1, isSubscription: false },
-          { item: INITIAL_GROCERIES[3], quantity: 3, isSubscription: false }
-        ],
-        totalAmount: 41500,
-        currency: 'MMK',
-        paymentMethod: { id: 'p1', type: 'kbzpay', accountName: 'Thura Kyaw', accountNumber: '09975112233', isDefault: true },
-        deliveryAddress: { id: 'a2', name: 'Downtown Office', addressLine: 'Level 18, Junction City Tower', city: 'Yangon', state: 'Yangon Region', zipCode: '11181', phone: '09450001122', isDefault: false },
-        status: 'delivered',
-        createdAt: 'Jul 22, 2026',
-        deliveryLat: 16.78,
-        deliveryLng: 96.16,
-        step: 3
-      },
-      {
-        id: 'ORD_609110',
-        items: [
-          { item: INITIAL_GROCERIES[4], quantity: 1, isSubscription: false }
-        ],
-        totalAmount: 18500,
-        currency: 'MMK',
-        paymentMethod: { id: 'p1', type: 'kbzpay', accountName: 'Thura Kyaw', accountNumber: '09975112233', isDefault: true },
-        deliveryAddress: { id: 'a1', name: 'Home', addressLine: 'Room 1402, Yankin Tower A', city: 'Yangon', state: 'Yangon Region', zipCode: '11201', phone: '09975112233', isDefault: true },
-        status: 'cancelled',
-        createdAt: 'Jul 18, 2026',
-        deliveryLat: 16.82,
-        deliveryLng: 96.15,
-        step: 0
-      }
-    ];
-
     const liveAndProfileOrders = [...orders, ...(profile.orderHistory || [])];
-    const liveIds = new Set(liveAndProfileOrders.map(o => o.id));
-    const combined = [...liveAndProfileOrders, ...mockList.filter(m => !liveIds.has(m.id))];
-    return combined;
+    const seen = new Set<string>();
+    return liveAndProfileOrders.filter((o) => {
+      if (seen.has(o.id)) return false;
+      seen.add(o.id);
+      return true;
+    });
   }, [orders, profile.orderHistory]);
 
   const filteredOrders = useMemo(() => {
@@ -1071,36 +1006,15 @@ export default function UserProfileModal({
                 </AnimatePresence>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Local Simulated Wallet Balance */}
-                  <div className="p-4 rounded-xl border border-dashed border-emerald-500/20 dark:border-white/10 bg-emerald-500/5 dark:bg-emerald-950/5 flex items-center justify-between">
-                    <div>
-                      <h5 className="font-bold text-sm text-slate-800 dark:text-white">Pre-funded Digital Balance</h5>
-                      <p className="text-xs text-slate-500 mt-1">Use for instant payment authorizations.</p>
-                      <p className="font-mono text-xl font-extrabold text-emerald-500 dark:text-emerald-400 mt-2">
-                        {profile.balance.toLocaleString()} MMK
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if ((profile.walletTopUpsUsed || 0) >= 2) {
-                          onAddToast('Top-up limit', 'Demo wallet top-ups are capped at 2 per session.', 'warning');
-                          return;
-                        }
-                        const confirmed = window.confirm(
-                          'Demo top-up adds 50,000 MMK (max 2 top-ups per session). Continue?'
-                        );
-                        if (!confirmed) return;
-                        onUpdateProfile(prev => ({
-                          ...prev,
-                          balance: prev.balance + 50000,
-                          walletTopUpsUsed: (prev.walletTopUpsUsed || 0) + 1
-                        }));
-                        onAddToast('Top-up Approved', 'Funded 50,000 MMK into wallet.', 'success');
-                      }}
-                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-extrabold rounded-lg cursor-pointer"
-                    >
-                      + Top-Up
-                    </button>
+                  {/* Loyalty / store credit display — checkout uses Stripe */}
+                  <div className="p-4 rounded-xl border border-dashed border-emerald-500/20 dark:border-white/10 bg-emerald-500/5 dark:bg-emerald-950/5">
+                    <h5 className="font-bold text-sm text-slate-800 dark:text-white">Store credit</h5>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Checkout is paid securely with Stripe. In-app wallet top-ups are not used for charges.
+                    </p>
+                    <p className="font-mono text-xl font-extrabold text-emerald-500 dark:text-emerald-400 mt-2">
+                      {profile.balance.toLocaleString()} MMK
+                    </p>
                   </div>
 
                   {profile.paymentMethods.map((pay) => {

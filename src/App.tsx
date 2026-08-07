@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
-  Bell, ShoppingCart, User, Moon, Sun, ShieldAlert, Sparkles, MapPin, BadgePercent,
-  TrendingUp, Settings, HelpCircle, Heart, Radio, Check, Globe, Home, QrCode, Truck,
-  Mic, FileText, RotateCcw, LogIn, Monitor
+  Bell, ShoppingCart, Moon, Sun, ShieldAlert, Sparkles, MapPin,
+  Check, Home, Truck, Mic, FileText, LogIn, Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -135,6 +134,7 @@ export default function App() {
   const [groceries, setGroceries] = useState<GroceryItem[]>(INITIAL_GROCERIES);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [purchaseCounts, setPurchaseCounts] = useState<Record<string, number>>({
     'g1': 5, // Shwe Bo Paw San Premium Rice
     'g6': 4, // Pyin Oo Lwin Highland Coffee Beans
@@ -252,8 +252,38 @@ export default function App() {
             })
             .filter((line): line is CartItem => line != null),
         );
+        // Remap quick-reorder counts from demo ids → live product ids
+        setPurchaseCounts((prev) => {
+          const next: Record<string, number> = {};
+          for (const [oldId, count] of Object.entries(prev)) {
+            const n = Number(count);
+            if (!Number.isFinite(n)) continue;
+            const demo = INITIAL_GROCERIES.find((g) => g.id === oldId);
+            const live = mapped.find(
+              (g) =>
+                g.id === oldId ||
+                (demo && g.name.toLowerCase() === demo.name.toLowerCase()),
+            );
+            if (live) next[live.id] = n;
+          }
+          return Object.keys(next).length ? next : prev;
+        });
       } catch {
-        /* keep INITIAL_GROCERIES for UI polish if API is down */
+        if (!cancelled) {
+          const id = `toast_catalog_${Date.now()}`;
+          setToasts((prev) => [
+            ...prev,
+            {
+              id,
+              title: 'Catalog offline',
+              message: 'Showing demo products. Start the API on :8080 for live stock and checkout.',
+              type: 'warning',
+            },
+          ]);
+          setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== id));
+          }, 4000);
+        }
       }
     })();
     return () => {
@@ -310,9 +340,6 @@ export default function App() {
       read: false
     }
   ]);
-
-  // Floating toasts stack
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Handle Toasts & Notifications
   const handleAddToast = (title: string, message: string, type: 'success' | 'warning' | 'info' | 'inventory') => {
@@ -510,9 +537,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Logo & Platform Name */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <div className="p-2 bg-emerald-500 rounded-xl text-black shadow-md shadow-emerald-500/10">
-              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
+            <img
+              src="/icon-192.png"
+              alt="Aura Fresh"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md shadow-emerald-500/15 object-cover"
+              width={40}
+              height={40}
+            />
             <div className="hidden min-[380px]:block">
               <h1 className="font-display font-black text-base sm:text-lg tracking-tight leading-none bg-linear-to-r from-emerald-500 to-emerald-600 dark:from-white dark:to-emerald-400 bg-clip-text text-transparent">
                 AURA FRESH
@@ -566,15 +597,6 @@ export default function App() {
               ) : (
                 <Moon className="w-4.5 h-4.5 text-slate-600" />
               )}
-            </button>
-
-            {/* Admin Hub — dedicated /admin route */}
-            <button
-              onClick={() => navigate('/admin')}
-              className="px-2.5 sm:px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 dark:bg-emerald-950/30 border border-emerald-500/20 dark:border-white/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span className="hidden md:inline">Admin Hub</span>
             </button>
 
             {/* Desktop Bell Notifications Toggle */}
@@ -821,7 +843,6 @@ export default function App() {
             onClearCart={handleClearCart}
             profile={profile}
             onUpdateProfile={setProfile}
-            onAddOrder={handleAddOrder}
             onAddToast={handleAddToast}
             onClose={() => setIsCartOpen(false)}
             isSignedIn={isSignedIn}
@@ -946,49 +967,20 @@ export default function App() {
 
         <button
           onClick={() => {
-            if (orders.length > 0) {
-              // Orders are prepended — index 0 is the newest
-              setActiveTrackingOrder(orders[0]);
+            const active = orders.find(
+              (o) => o.status === 'pending' || o.status === 'processing' || o.status === 'out_for_delivery',
+            ) || orders[0];
+            if (active) {
+              setActiveTrackingOrder(active);
             } else {
-              // Fallback address/payment when GDPR purge cleared saved details
-              const demoAddress = profile.addresses[0] ?? {
-                id: 'addr_demo',
-                name: profile.name || 'Guest',
-                addressLine: 'Yankin Tower A (Yankin)',
-                city: 'Yangon',
-                state: 'Yangon Region',
-                zipCode: '11201',
-                phone: '09000000000',
-                isDefault: true
-              };
-              const demoPayment = profile.paymentMethods[0] ?? {
-                id: 'pay_demo',
-                type: 'mmqr' as const,
-                accountName: profile.name || 'Guest',
-                accountNumber: 'MMQR-DEMO',
-                isDefault: true
-              };
-              // Create demo active tracking order if none exists
-              const demoOrder: Order = {
-                id: `ORD_${Date.now().toString().slice(-6)}`,
-                items: [
-                  { item: INITIAL_GROCERIES[0], quantity: 2, isSubscription: false },
-                  { item: INITIAL_GROCERIES[1], quantity: 1, isSubscription: false }
-                ],
-                totalAmount: 40800,
-                currency: 'MMK',
-                deliveryAddress: demoAddress,
-                paymentMethod: demoPayment,
-                status: 'out_for_delivery',
-                createdAt: new Date().toISOString(),
-                deliveryLat: 16.8123,
-                deliveryLng: 96.1543,
-                step: 2,
-                estimatedDeliveryWindow: '18 mins'
-              };
-              setOrders([demoOrder]);
-              setActiveTrackingOrder(demoOrder);
-              handleAddToast('Live Delivery Tracking', 'Tracking active dispatch rider in Yangon Zone.', 'info');
+              handleAddToast(
+                'No active delivery',
+                isSignedIn
+                  ? 'Place an order to track your delivery here.'
+                  : 'Sign in and checkout to track live deliveries.',
+                'info',
+              );
+              if (!isSignedIn) setIsAuthOpen(true);
             }
           }}
           className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-colors relative min-w-12 min-h-11 ${
@@ -999,7 +991,11 @@ export default function App() {
         >
           <div className="relative">
             <Truck className="w-5 h-5 text-emerald-500" />
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
+            {orders.some(
+              (o) => o.status === 'pending' || o.status === 'processing' || o.status === 'out_for_delivery',
+            ) && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
+            )}
           </div>
           <span className="text-[9px] font-bold mt-0.5">Track</span>
         </button>
