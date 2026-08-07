@@ -512,6 +512,8 @@ export default function App() {
               orders={orders}
               onRestock={handleRestockItem}
               onUpdateOrderStatus={handleUpdateOrderStatus}
+              onGroceriesLoaded={setGroceries}
+              onOrdersLoaded={setOrders}
               onAddToast={handleAddToast}
               onAddNotification={handleAddNotification}
             />

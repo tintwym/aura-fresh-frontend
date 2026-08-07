@@ -32,7 +32,14 @@ export function mapProductToGrocery(p: ApiProduct): GroceryItem {
 function mapApiStatus(status?: string): OrderStatus {
   switch ((status || '').toUpperCase()) {
     case 'COMPLETED':
+    case 'DELIVERED':
       return 'delivered';
+    case 'PROCESSING':
+      return 'processing';
+    case 'OUT_FOR_DELIVERY':
+      return 'out_for_delivery';
+    case 'CANCELLED':
+      return 'cancelled';
     case 'PAID_STOCK_SHORTAGE':
       return 'processing';
     default:
@@ -102,6 +109,12 @@ export function mapApiOrderToUiOrder(order: ApiOrder, catalog: GroceryItem[]): O
     createdAt: order.createdAt || new Date().toISOString(),
     deliveryLat: 16.8,
     deliveryLng: 96.15,
-    step: mapApiStatus(order.status) === 'delivered' ? 4 : 1,
+    step: mapApiStatus(order.status) === 'delivered'
+      ? 4
+      : mapApiStatus(order.status) === 'out_for_delivery'
+        ? 3
+        : mapApiStatus(order.status) === 'processing'
+          ? 2
+          : 1,
   };
 }

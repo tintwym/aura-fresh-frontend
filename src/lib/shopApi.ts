@@ -193,3 +193,64 @@ export async function fetchOrderHistory(): Promise<ApiOrder[]> {
   const data = (await res.json()) as ApiOrder[];
   return Array.isArray(data) ? data : [];
 }
+
+async function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const { getAdminToken } = await import('./adminAuth');
+  const token = getAdminToken();
+  if (!token) throw new AuthApiError(401, 'Admin sign-in required.');
+
+  const headers = new Headers(init.headers || {});
+  headers.set('Accept', 'application/json');
+  headers.set('Authorization', `Bearer ${token}`);
+
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), { ...init, headers });
+  } catch {
+    throw new AuthApiError(0, 'Network error');
+  }
+  if (!res.ok) {
+    throw new AuthApiError(res.status, await parseErrorMessage(res));
+  }
+  return res;
+}
+
+/** Absolute stock update via admin product update (multipart). */
+export async function adminUpdateProductStock(
+  product: {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    stock: number;
+  },
+): Promise<ApiProduct> {
+  const form = new FormData();
+  form.set('name', product.name);
+  form.set('description', product.description || '');
+  form.set('price', String(product.price));
+  form.set('stock', String(product.stock));
+  const res = await adminFetch(`/products/update/${product.id}`, {
+    method: 'PUT',
+    body: form,
+  });
+  return (await res.json()) as ApiProduct;
+}
+
+export async function fetchAdminOrders(): Promise<ApiOrder[]> {
+  const res = await adminFetch('/orders/admin');
+  const data = (await res.json()) as ApiOrder[];
+  return Array.isArray(data) ? data : [];
+}
+
+export async function adminUpdateOrderStatus(
+  orderId: string,
+  status: string,
+): Promise<ApiOrder> {
+  const res = await adminFetch(`/orders/admin/${orderId}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  return (await res.json()) as ApiOrder;
+}

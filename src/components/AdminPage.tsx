@@ -1,22 +1,32 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Leaf, Lock, Eye, EyeOff, AlertTriangle, ArrowLeft, Shield } from 'lucide-react';
-import { GroceryItem, Order } from '../types';
+import { GroceryItem, Order, OrderStatus } from '../types';
 import AdminDashboard from './AdminDashboard';
 import { loginAdmin } from '../lib/authApi';
 import { AuthApiError } from '../lib/authValidation';
 import {
   clearAdminAuth,
   getAdminSession,
+  getAdminToken,
   setAdminSession,
   setAdminToken,
 } from '../lib/adminAuth';
+import {
+  adminUpdateOrderStatus,
+  adminUpdateProductStock,
+  fetchAdminOrders,
+  fetchProducts,
+} from '../lib/shopApi';
+import { mapApiOrderToUiOrder, mapProductToGrocery } from '../lib/mapProduct';
 
 type AdminPageProps = {
   groceries: GroceryItem[];
   orders: Order[];
   onRestock: (itemId: string, amount: number) => void;
-  onUpdateOrderStatus: (orderId: string, status: any, step: number) => void;
+  onUpdateOrderStatus: (orderId: string, status: OrderStatus, step: number) => void;
+  onGroceriesLoaded: (items: GroceryItem[]) => void;
+  onOrdersLoaded: (orders: Order[]) => void;
   onAddToast: (title: string, msg: string, type: 'success' | 'warning' | 'info') => void;
   onAddNotification: (
     title: string,
@@ -30,6 +40,8 @@ export default function AdminPage({
   orders,
   onRestock,
   onUpdateOrderStatus,
+  onGroceriesLoaded,
+  onOrdersLoaded,
   onAddToast,
   onAddNotification,
 }: AdminPageProps) {
@@ -41,6 +53,35 @@ export default function AdminPage({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
+  const [adminOrders, setAdminOrders] = useState<Order[]>(orders);
+  const [busy, setBusy] = useState(false);
+
+  const refreshAdminData = useCallback(async () => {
+    if (!getAdminToken()) return;
+    try {
+      const [apiOrders, apiProducts] = await Promise.all([
+        fetchAdminOrders(),
+        fetchProducts(),
+      ]);
+      const mappedGroceries = apiProducts.map(mapProductToGrocery);
+      const mappedOrders = apiOrders.map((o) => mapApiOrderToUiOrder(o, mappedGroceries));
+      setAdminOrders(mappedOrders);
+      onGroceriesLoaded(mappedGroceries);
+      onOrdersLoaded(mappedOrders);
+    } catch (err) {
+      onAddToast(
+        'Admin sync failed',
+        err instanceof Error ? err.message : 'Could not refresh admin data.',
+        'warning',
+      );
+    }
+  }, [onAddToast, onGroceriesLoaded, onOrdersLoaded]);
+
+  useEffect(() => {
+    if (session && getAdminToken()) {
+      void refreshAdminData();
+    }
+  }, [session, refreshAdminData]);
 
   const handleLogout = () => {
     clearAdminAuth();
@@ -71,6 +112,7 @@ export default function AdminPage({
       setAdminSession(next);
       setSession(next);
       onAddToast('Admin unlocked', 'Welcome to the Admin Hub.', 'success');
+      await refreshAdminData();
     } catch (err) {
       if (err instanceof AuthApiError && err.status === 0) {
         setError('Can’t reach the API. Start the Spring Boot backend and try again.');
@@ -84,19 +126,78 @@ export default function AdminPage({
     }
   };
 
+  const handleRestock = async (itemId: string, amount: number) => {
+    const item = groceries.find((g) => g.id === itemId);
+    if (!item) return;
+    const newStock = Math.min(item.maxStock, item.stock + amount);
+    setBusy(true);
+    try {
+      if (getAdminToken()) {
+        await adminUpdateProductStock({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          stock: newStock,
+        });
+        const products = await fetchProducts();
+        onGroceriesLoaded(products.map(mapProductToGrocery));
+        onAddToast('Stock updated', `${item.name} → ${newStock} units (saved to API).`, 'success');
+      } else {
+        onRestock(itemId, amount);
+        onAddToast('Local restock only', 'Sign in as admin to persist stock.', 'warning');
+      }
+    } catch (err) {
+      onAddToast(
+        'Restock failed',
+        err instanceof Error ? err.message : 'Could not update stock.',
+        'warning',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdvanceOrder = async (orderId: string, status: OrderStatus, step: number) => {
+    // Dashboard already computes next status; persist when admin token present
+    setBusy(true);
+    try {
+      if (getAdminToken()) {
+        const api = await adminUpdateOrderStatus(orderId, status);
+        const mapped = mapApiOrderToUiOrder(api, groceries);
+        setAdminOrders((prev) => prev.map((o) => (o.id === orderId ? mapped : o)));
+        onUpdateOrderStatus(orderId, mapped.status, mapped.step ?? step);
+        onAddToast('Order updated', `Status → ${mapped.status}`, 'success');
+        await refreshAdminData();
+      } else {
+        onUpdateOrderStatus(orderId, status, step);
+      }
+    } catch (err) {
+      onAddToast(
+        'Order update failed',
+        err instanceof Error ? err.message : 'Could not update order.',
+        'warning',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (session) {
     return (
-      <AdminDashboard
-        variant="page"
-        groceries={groceries}
-        orders={orders}
-        onRestock={onRestock}
-        onUpdateOrderStatus={onUpdateOrderStatus}
-        onAddToast={onAddToast}
-        onAddNotification={onAddNotification}
-        onClose={handleLogout}
-        adminLabel={session.username}
-      />
+      <div className={busy ? 'opacity-90 pointer-events-none' : undefined}>
+        <AdminDashboard
+          variant="page"
+          groceries={groceries}
+          orders={adminOrders.length ? adminOrders : orders}
+          onRestock={handleRestock}
+          onUpdateOrderStatus={handleAdvanceOrder}
+          onAddToast={onAddToast}
+          onAddNotification={onAddNotification}
+          onClose={handleLogout}
+          adminLabel={session.username}
+        />
+      </div>
     );
   }
 
@@ -119,94 +220,55 @@ export default function AdminPage({
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#121212] shadow-xl p-6 sm:p-8 relative overflow-hidden">
-          <div className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-emerald-500/15 blur-3xl" />
-
-          <div className="relative flex items-center gap-3 mb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15">
-              <Leaf className="h-5 w-5 text-emerald-500" />
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 rounded-xl bg-emerald-500 text-black">
+              <Leaf className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-display text-xl font-extrabold text-slate-900 dark:text-white">
-                Admin Hub
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Sign in at <code className="font-mono text-emerald-600 dark:text-emerald-400">/admin</code>
-              </p>
+              <h1 className="font-display font-black text-lg">Admin Hub</h1>
+              <p className="text-xs text-slate-500">Sign in with seeded admin credentials</p>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="relative space-y-3.5" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className={`mb-1 block text-xs font-semibold ${fieldErrors.username ? 'text-red-600' : 'text-slate-500'}`}>
-                Username
-              </label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Username</label>
               <input
                 value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (fieldErrors.username) {
-                    setFieldErrors((p) => ({ ...p, username: undefined }));
-                  }
-                }}
+                onChange={(e) => setUsername(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0F0F0F] px-3 py-2.5 text-sm"
                 autoComplete="username"
-                placeholder="Admin username"
-                className={`w-full rounded-xl border bg-white dark:bg-[#161616] px-3.5 py-3 text-sm outline-hidden placeholder:text-slate-400 ${
-                  fieldErrors.username
-                    ? 'border-red-400 ring-2 ring-red-400/25'
-                    : 'border-slate-200 dark:border-white/10 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
-                }`}
               />
               {fieldErrors.username && (
-                <p className="mt-1.5 text-xs font-medium text-red-600" role="alert">
-                  {fieldErrors.username}
-                </p>
+                <p className="text-[11px] text-red-500 mt-1">{fieldErrors.username}</p>
               )}
             </div>
-
             <div>
-              <label className={`mb-1 block text-xs font-semibold ${fieldErrors.password ? 'text-red-600' : 'text-slate-500'}`}>
-                Password
-              </label>
-              <div className="relative">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Password</label>
+              <div className="relative mt-1">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (fieldErrors.password) {
-                      setFieldErrors((p) => ({ ...p, password: undefined }));
-                    }
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0F0F0F] px-3 py-2.5 text-sm pr-10"
                   autoComplete="current-password"
-                  placeholder="Admin password"
-                  className={`w-full rounded-xl border bg-white dark:bg-[#161616] px-3.5 py-3 pr-11 text-sm outline-hidden placeholder:text-slate-400 ${
-                    fieldErrors.password
-                      ? 'border-red-400 ring-2 ring-red-400/25'
-                      : 'border-slate-200 dark:border-white/10 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
-                  }`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 cursor-pointer"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {fieldErrors.password && (
-                <p className="mt-1.5 text-xs font-medium text-red-600" role="alert">
-                  {fieldErrors.password}
-                </p>
+                <p className="text-[11px] text-red-500 mt-1">{fieldErrors.password}</p>
               )}
             </div>
 
             {error && (
-              <div
-                className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3.5 py-3 text-sm font-medium text-red-700 dark:text-red-300"
-                role="alert"
-              >
+              <div className="flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
