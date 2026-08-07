@@ -27,12 +27,15 @@ import VoiceSearchModal from './components/VoiceSearchModal';
 import OrderCelebrationModal from './components/OrderCelebrationModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
 import NavbarSearch from './components/NavbarSearch';
+import PaymentSuccessPage from './components/PaymentSuccessPage';
 import {
   displayNameFromUser,
   fetchCurrentUser,
   getStoredToken,
   storeToken,
 } from './lib/authApi';
+import { fetchOrderHistory, fetchProducts } from './lib/shopApi';
+import { mapApiOrderToUiOrder, mapProductToGrocery } from './lib/mapProduct';
 
 export default function App() {
   type ThemePref = 'system' | 'light' | 'dark';
@@ -228,6 +231,60 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // Load real catalog from Spring Boot (seeded groceries). Keep mock only as offline fallback.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const products = await fetchProducts();
+        if (cancelled || products.length === 0) return;
+        const mapped = products.map(mapProductToGrocery);
+        setGroceries(mapped);
+        // Rematch open cart lines to API product UUIDs (mock ids cannot checkout)
+        setCart((prev) =>
+          prev
+            .map((line) => {
+              const match = mapped.find(
+                (g) => g.name.toLowerCase() === line.item.name.toLowerCase(),
+              );
+              return match ? { ...line, item: { ...match } } : null;
+            })
+            .filter((line): line is CartItem => line != null),
+        );
+      } catch {
+        /* keep INITIAL_GROCERIES for UI polish if API is down */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load order history when signed in
+  useEffect(() => {
+    if (!isSignedIn || !getStoredToken()) return;
+    let cancelled = false;
+    fetchOrderHistory()
+      .then((apiOrders) => {
+        if (cancelled) return;
+        setOrders(apiOrders.map((o) => mapApiOrderToUiOrder(o, groceries)));
+      })
+      .catch(() => {
+        /* keep local orders if API fails */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, groceries]);
+
+  // Open cart when returning from Stripe cancel URL /cart
+  useEffect(() => {
+    if (window.location.pathname === '/cart') {
+      setIsCartOpen(true);
+      navigate('/', { replace: true });
+    }
+  }, [navigate]);
 
   const openAccount = () => {
     if (isSignedIn) setIsProfileOpen(true);
@@ -430,6 +487,17 @@ export default function App() {
               onUpdateOrderStatus={handleUpdateOrderStatus}
               onAddToast={handleAddToast}
               onAddNotification={handleAddNotification}
+            />
+          }
+        />
+        <Route
+          path="/payment/success"
+          element={
+            <PaymentSuccessPage
+              onOrdersLoaded={setOrders}
+              onGroceriesLoaded={setGroceries}
+              onClearCart={handleClearCart}
+              onAddToast={handleAddToast}
             />
           }
         />
@@ -756,6 +824,11 @@ export default function App() {
             onAddOrder={handleAddOrder}
             onAddToast={handleAddToast}
             onClose={() => setIsCartOpen(false)}
+            isSignedIn={isSignedIn}
+            onRequestSignIn={() => {
+              setIsCartOpen(false);
+              setIsAuthOpen(true);
+            }}
           />
         )}
       </AnimatePresence>

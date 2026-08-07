@@ -1,9 +1,6 @@
 const ADMIN_SESSION_KEY = 'aura-fresh-admin-session';
 const ADMIN_TOKEN_KEY = 'aura-fresh-admin-token';
 
-/** Demo password used when Spring admin API is unavailable. */
-export const DEMO_ADMIN_PASSWORD = 'aura-admin';
-
 export type AdminSession = {
   username: string;
   via: 'api' | 'demo';
@@ -13,7 +10,13 @@ export function getAdminSession(): AdminSession | null {
   try {
     const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as AdminSession;
+    const parsed = JSON.parse(raw) as AdminSession & { via?: string };
+    // Drop legacy demo sessions
+    if (parsed?.via === 'demo') {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      return null;
+    }
+    return parsed as AdminSession;
   } catch {
     return null;
   }

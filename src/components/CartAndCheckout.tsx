@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { CartItem, UserProfile, DeliveryAddress, PaymentMethod, Order, GroceryItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { createCheckoutSession, syncCartToApi } from '../lib/shopApi';
+import { AuthApiError } from '../lib/authValidation';
 
 interface CartAndCheckoutProps {
   cart: CartItem[];
@@ -18,6 +20,8 @@ interface CartAndCheckoutProps {
   onAddOrder: (order: Order) => void;
   onAddToast: (title: string, msg: string, type: 'success' | 'warning' | 'info') => void;
   onClose: () => void;
+  isSignedIn: boolean;
+  onRequestSignIn: () => void;
 }
 
 export default function CartAndCheckout({
@@ -30,7 +34,9 @@ export default function CartAndCheckout({
   onUpdateProfile,
   onAddOrder,
   onAddToast,
-  onClose
+  onClose,
+  isSignedIn,
+  onRequestSignIn,
 }: CartAndCheckoutProps) {
   const [checkoutStep, setCheckoutStep] = useState<'cart' | 'shipping' | 'payment' | 'confirm'>('cart');
   const [currency, setCurrency] = useState<'MMK' | 'USD'>('MMK');
@@ -269,13 +275,7 @@ export default function CartAndCheckout({
       setCheckoutStep('shipping');
       return;
     }
-    if (!activePayment) {
-      onAddToast('Missing Billing', 'Please select or add your payment details.', 'warning');
-      setCheckoutStep('payment');
-      return;
-    }
 
-    // Re-check live stock before payment
     for (const line of cart) {
       const live = groceries.find(g => g.id === line.item.id);
       if (!live || live.stock < line.quantity) {
@@ -289,161 +289,37 @@ export default function CartAndCheckout({
       }
     }
 
-    if (activePayment.type === 'mmqr' && !mmqrVerified) {
-      onAddToast('MMQR required', 'Confirm the MMQR bank scan before paying.', 'warning');
-      setCheckoutStep('payment');
+    if (!isSignedIn) {
+      onAddToast('Sign in required', 'Please sign in to pay securely with Stripe.', 'warning');
+      onRequestSignIn();
       return;
-    }
-
-    // High-value orders: explicit confirmation (no hardcoded PIN)
-    if (grandTotal >= 50000) {
-      const approved = window.confirm(
-        `High-value order (${formatPrice(grandTotal)}).\n\nConfirm you authorize this payment?`
-      );
-      if (!approved) {
-        onAddToast('Auth canceled', 'High-value payment was not authorized.', 'warning');
-        return;
-      }
     }
 
     setIsProcessing(true);
     try {
-      const paymentLabel = {
-        kbzpay: 'KBZPay API Node',
-        wavepay: 'WavePay Payment Hub',
-        ayapay: 'AYA Pay Auth Gateway',
-        mmqr: 'MMQR Interoperable Central Gateway',
-        mpu: 'MPU PCI-DSS Secure Engine',
-        digital_wallet: 'In-app Wallet',
-        apple_pay: 'Apple Pay',
-        google_pay: 'Google Pay'
-      }[activePayment.type];
-
-      setProcessingStatus(`Initiating encrypted connection with ${paymentLabel}...`);
-      await new Promise(r => setTimeout(r, 1000));
-
-      setProcessingStatus('Securing checkout payload under SSL 256-bit encryption...');
-      await new Promise(r => setTimeout(r, 800));
-
-      let nextBalance = profile.balance;
-      if (activePayment.type === 'digital_wallet') {
-        if (profile.balance < grandTotal) {
-          throw new Error('Insufficient funds in pre-funded App Wallet. Please top up.');
-        }
-        setProcessingStatus('Authorizing and debiting funds from secure App Wallet balance...');
-        await new Promise(r => setTimeout(r, 800));
-        nextBalance = profile.balance - grandTotal;
-      } else if (activePayment.type === 'mmqr') {
-        setProcessingStatus('Confirming MMQR inter-bank settlement...');
-        await new Promise(r => setTimeout(r, 1000));
-      } else {
-        // External rails still require explicit user confirmation in this demo
-        const authorized = window.confirm(
-          `Authorize ${formatPrice(grandTotal)} via ${paymentLabel}?\n\n` +
-          `(Demo: no real charge is sent to a bank.)`
-        );
-        if (!authorized) {
-          throw new Error('Payment authorization was declined.');
-        }
-        setProcessingStatus('Verifying digital wallet handshake & billing authorization...');
-        await new Promise(r => setTimeout(r, 1200));
+      setProcessingStatus('Syncing your cart with Aura Fresh…');
+      const merged = new Map<string, number>();
+      for (const line of cart) {
+        merged.set(line.item.id, (merged.get(line.item.id) || 0) + line.quantity);
       }
+      await syncCartToApi(
+        [...merged.entries()].map(([productId, quantity]) => ({ productId, quantity })),
+      );
 
-      setProcessingStatus('Finalizing order dispatch and compiling tracking live coordinates...');
-      await new Promise(r => setTimeout(r, 800));
-
-      const earnedPts = Math.floor(grandTotal / 1000);
-
-      const zonesCoord = {
-        'Downtown Yangon': { lat: 16.778, lng: 96.16 },
-        'Yankin': { lat: 16.829, lng: 96.173 },
-        'Bahan': { lat: 16.808, lng: 96.155 },
-        'Hlaing': { lat: 16.837, lng: 96.126 },
-        'All Zones': { lat: 16.8, lng: 96.15 }
-      };
-
-      const zoneFromAddress =
-        activeAddress.addressLine.match(/\(([^)]+)\)\s*$/)?.[1] ||
-        (selectedAddressId === 'manual' ? manualAddress.zone : null) ||
-        'Yankin';
-      const zoneKey = zoneFromAddress;
-      const coords = zonesCoord[zoneKey as keyof typeof zonesCoord] || zonesCoord['Yankin'];
-
-      const snapshotItems = cart.map(line => {
-        const live = groceries.find(g => g.id === line.item.id) || line.item;
-        return { ...line, item: { ...live } };
-      });
-
-      const newOrder: Order = {
-        id: 'ORD_' + Math.floor(Math.random() * 900000 + 100000),
-        items: snapshotItems,
-        totalAmount: grandTotal,
-        currency: 'MMK',
-        paymentMethod: activePayment,
-        deliveryAddress: activeAddress,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        deliveryLat: coords.lat + (Math.random() - 0.5) * 0.01,
-        deliveryLng: coords.lng + (Math.random() - 0.5) * 0.01,
-        step: 0,
-        deliveryDate: selectedDate,
-        deliveryTimeSlot: selectedTimeSlot,
-        estimatedDeliveryWindow: `${estimatedDeliveryInfo.clockRange} (${estimatedDeliveryInfo.durationRange} - ${estimatedDeliveryInfo.zone})`
-      };
-
-      if (hasSubscription) {
-        const frequency = cart.find(i => i.isSubscription)?.frequency || 'weekly';
-        const daysUntilBill = frequency === 'monthly' ? 30 : frequency === 'biweekly' ? 14 : 7;
-        newOrder.subscriptionInfo = {
-          frequency,
-          nextBillingDate: new Date(Date.now() + daysUntilBill * 24 * 3600 * 1000).toLocaleDateString()
-        };
-      }
-
-      onUpdateProfile(prev => {
-        let updatedAddresses = [...prev.addresses];
-        let updatedPayments = [...prev.paymentMethods];
-
-        if (selectedAddressId === 'manual') {
-          const savedAddr: DeliveryAddress = {
-            ...activeAddress,
-            id: 'addr_' + Date.now(),
-            isDefault: updatedAddresses.length === 0
-          };
-          updatedAddresses.push(savedAddr);
-        }
-        if (selectedPaymentId === 'manual') {
-          const savedPay: PaymentMethod = {
-            ...activePayment,
-            id: 'pay_' + Date.now(),
-            isDefault: updatedPayments.length === 0
-          };
-          updatedPayments.push(savedPay);
-        }
-
-        const remainingCoupons = appliedCoupon
-          ? (prev.redeemedCoupons || []).filter(c => c !== appliedCoupon)
-          : (prev.redeemedCoupons || []);
-
-        return {
-          ...prev,
-          balance: nextBalance,
-          loyaltyPoints: prev.loyaltyPoints + earnedPts,
-          addresses: updatedAddresses,
-          paymentMethods: updatedPayments,
-          redeemedCoupons: remainingCoupons,
-          orderHistory: [newOrder, ...(prev.orderHistory || [])]
-        };
-      });
-
-      onAddOrder(newOrder);
-      onClearCart();
-      onAddToast('Order Dispatched', `Invoice generated! Earned +${earnedPts} Loyalty Points.`, 'success');
-      onClose();
+      setProcessingStatus('Creating secure Stripe Checkout…');
+      const { checkoutUrl } = await createCheckoutSession();
+      setProcessingStatus('Redirecting to Stripe…');
+      window.location.assign(checkoutUrl);
     } catch (err) {
-      onAddToast('Gateway Rejection', err instanceof Error ? err.message : 'Transaction failed.', 'warning');
-    } finally {
+      const msg =
+        err instanceof AuthApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Checkout failed';
+      onAddToast('Checkout failed', msg, 'warning');
       setIsProcessing(false);
+      setProcessingStatus('');
     }
   };
 
@@ -1159,8 +1035,8 @@ export default function CartAndCheckout({
           {checkoutStep === 'confirm' && (
             <div className="space-y-4">
               <div>
-                <h4 className="font-display font-bold text-base text-slate-800 dark:text-white">Review & Authorize</h4>
-                <p className="text-xs text-slate-400">Finalize your order values, delivery coordinates, and recurring conditions.</p>
+                <h4 className="font-display font-bold text-base text-slate-800 dark:text-white">Review & pay with Stripe</h4>
+                <p className="text-xs text-slate-400">Confirm delivery details, then you will be redirected to Stripe Checkout.</p>
               </div>
 
               {/* Order summaries */}
@@ -1173,8 +1049,8 @@ export default function CartAndCheckout({
                   </div>
                   <div>
                     <span className="font-semibold block text-slate-500">BILLING VIA</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200 uppercase">{activePayment?.type}</span>
-                    <p className="text-slate-400 font-mono text-[10px]">{activePayment?.maskedCardNumber || activePayment?.accountNumber}</p>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">Stripe Checkout</span>
+                    <p className="text-slate-400 font-mono text-[10px]">Card / wallet on Stripe</p>
                   </div>
                 </div>
 
@@ -1290,7 +1166,7 @@ export default function CartAndCheckout({
                   onClick={() => {
                     if (checkoutStep === 'shipping') setCheckoutStep('cart');
                     else if (checkoutStep === 'payment') setCheckoutStep('shipping');
-                    else if (checkoutStep === 'confirm') setCheckoutStep('payment');
+                    else if (checkoutStep === 'confirm') setCheckoutStep('shipping');
                   }}
                   className="px-4 py-3 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#161616] text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
                 >
@@ -1307,16 +1183,9 @@ export default function CartAndCheckout({
                       onAddToast('Missing Address', 'Add or select a delivery address first.', 'warning');
                       return;
                     }
-                    setCheckoutStep('payment');
+                    // Real charges go through Stripe Checkout (skip demo bank rails)
+                    setCheckoutStep('confirm');
                   } else if (checkoutStep === 'payment') {
-                    if (!activePayment) {
-                      onAddToast('Missing Billing', 'Select or add a payment method first.', 'warning');
-                      return;
-                    }
-                    if (activePayment.type === 'mmqr' && !mmqrVerified) {
-                      onAddToast('MMQR required', 'Confirm the MMQR bank scan before continuing.', 'warning');
-                      return;
-                    }
                     setCheckoutStep('confirm');
                   } else if (checkoutStep === 'confirm') handleCheckoutSubmit();
                 }}
@@ -1325,9 +1194,9 @@ export default function CartAndCheckout({
               >
                 <span>
                   {checkoutStep === 'cart' && 'Proceed to Shipping'}
-                  {checkoutStep === 'shipping' && 'Proceed to Payment'}
-                  {checkoutStep === 'payment' && 'Review final parameters'}
-                  {checkoutStep === 'confirm' && (isProcessing ? 'Authorizing Gateway...' : `Authorize & Pay ${formatPrice(grandTotal)}`)}
+                  {checkoutStep === 'shipping' && 'Review & pay with Stripe'}
+                  {checkoutStep === 'payment' && 'Continue to Stripe'}
+                  {checkoutStep === 'confirm' && (isProcessing ? 'Opening Stripe…' : `Pay ${formatPrice(grandTotal)} with Stripe`)}
                 </span>
                 {checkoutStep !== 'confirm' && <ArrowRight className="w-4 h-4" />}
               </button>
@@ -1343,12 +1212,12 @@ export default function CartAndCheckout({
                 <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
                 <Lock className="w-6 h-6 text-emerald-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
-              <h4 className="font-display font-extrabold text-lg text-white">Bank Authorization In Progress</h4>
+              <h4 className="font-display font-extrabold text-lg text-white">Preparing Stripe Checkout</h4>
               <p className="text-xs text-emerald-400 font-mono max-w-sm mt-3 animate-pulse">
                 {processingStatus}
               </p>
               <p className="text-[10px] text-slate-500 mt-8">
-                Compliance ID: MD_PCI_9921 • Please do not reload or leave this pane.
+                You will be redirected to Stripe to complete payment securely.
               </p>
             </div>
           )}

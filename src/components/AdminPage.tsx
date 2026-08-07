@@ -6,7 +6,6 @@ import AdminDashboard from './AdminDashboard';
 import { loginAdmin } from '../lib/authApi';
 import { AuthApiError } from '../lib/authValidation';
 import {
-  DEMO_ADMIN_PASSWORD,
   clearAdminAuth,
   getAdminSession,
   setAdminSession,
@@ -66,7 +65,6 @@ export default function AdminPage({
 
     setIsLoading(true);
     try {
-      // Prefer Spring admin API when available
       const token = await loginAdmin(username.trim(), password);
       setAdminToken(token);
       const next = { username: username.trim(), via: 'api' as const };
@@ -74,20 +72,8 @@ export default function AdminPage({
       setSession(next);
       onAddToast('Admin unlocked', 'Welcome to the Admin Hub.', 'success');
     } catch (err) {
-      // Local demo fallback (no backend / wrong API admin)
-      if (password === DEMO_ADMIN_PASSWORD) {
-        setAdminToken(null);
-        const next = {
-          username: username.trim() || 'admin',
-          via: 'demo' as const,
-        };
-        setAdminSession(next);
-        setSession(next);
-        onAddToast('Admin unlocked', 'Demo admin session started.', 'success');
-      } else if (err instanceof AuthApiError && err.status === 0) {
-        setError(
-          `Can’t reach the API. For local demo, use password “${DEMO_ADMIN_PASSWORD}”.`
-        );
+      if (err instanceof AuthApiError && err.status === 0) {
+        setError('Can’t reach the API. Start the Spring Boot backend and try again.');
       } else if (err instanceof AuthApiError && err.status === 401) {
         setError('Incorrect admin username or password.');
       } else {
@@ -236,7 +222,8 @@ export default function AdminPage({
             </button>
 
             <p className="text-[11px] text-center text-slate-400 pt-1">
-              Demo fallback password: <span className="font-mono text-slate-500">{DEMO_ADMIN_PASSWORD}</span>
+              Use the admin account from <code className="font-mono">ADMIN_SEED_*</code> in backend{' '}
+              <code className="font-mono">.env</code>.
             </p>
           </form>
         </div>
