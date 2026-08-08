@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Leaf, Eye, EyeOff, X, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { GoogleLogin } from '@react-oauth/google';
 import {
   AuthFieldErrors,
   AuthMode,
@@ -17,9 +18,14 @@ import {
   displayNameFromUser,
   fetchCurrentUser,
   loginUser,
+  loginWithSocial,
   registerUser,
   type AuthUser,
 } from '../lib/authApi';
+
+const GOOGLE_CLIENT_ID = String(
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID) || ''
+).trim();
 
 type AuthModalProps = {
   isOpen: boolean;
@@ -107,6 +113,31 @@ export default function AuthModal({
     setErrors(validateAuthForm(mode, nextValues));
   };
 
+  const finishAuth = async (token: string, successTitle: string, successMsg: (name: string) => string) => {
+    const user = await fetchCurrentUser(token);
+    const name = displayNameFromUser(user);
+    onAuthenticated(user, name);
+    onAddToast(successTitle, successMsg(name), 'success');
+    onClose();
+  };
+
+  const handleGoogleCredential = async (credential?: string) => {
+    if (!credential) {
+      setFormError('Google did not return a sign-in token. Please try again.');
+      return;
+    }
+    setFormError(null);
+    setIsLoading(true);
+    try {
+      const token = await loginWithSocial('GOOGLE', credential);
+      await finishAuth(token, 'Welcome', (name) => `Signed in with Google as ${name}.`);
+    } catch (err) {
+      setFormError(friendlyAuthError(err, false, { social: true }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setDidAttempt(true);
@@ -135,17 +166,14 @@ export default function AuthModal({
               password,
             });
 
-      const user = await fetchCurrentUser(token);
-      const name = displayNameFromUser(user);
-      onAuthenticated(user, name);
-      onAddToast(
+      await finishAuth(
+        token,
         mode === 'login' ? 'Welcome back' : 'Account created',
-        mode === 'login'
-          ? `Signed in as ${name}.`
-          : `Welcome to Aura Fresh, ${name}.`,
-        'success'
+        (name) =>
+          mode === 'login'
+            ? `Signed in as ${name}.`
+            : `Welcome to Aura Fresh, ${name}.`
       );
-      onClose();
     } catch (err) {
       setFormError(friendlyAuthError(err, mode === 'register'));
     } finally {
@@ -240,6 +268,29 @@ export default function AuthModal({
               );
             })}
           </div>
+
+          {GOOGLE_CLIENT_ID ? (
+            <div className={`mb-4 space-y-3 ${isLoading ? 'pointer-events-none opacity-60' : ''}`}>
+              <div className="flex w-full justify-center overflow-hidden [&_div]:!w-full [&_iframe]:!w-full">
+                <GoogleLogin
+                  onSuccess={(res) => {
+                    void handleGoogleCredential(res.credential);
+                  }}
+                  onError={() => setFormError('Google sign-in was cancelled or failed.')}
+                  useOneTap={false}
+                  theme="outline"
+                  size="large"
+                  shape="rectangular"
+                  text="continue_with"
+                />
+              </div>
+              <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <div className="h-px flex-1 bg-slate-200 dark:bg-white/10" />
+                <span>or email</span>
+                <div className="h-px flex-1 bg-slate-200 dark:bg-white/10" />
+              </div>
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
             {mode === 'register' && (

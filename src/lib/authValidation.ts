@@ -96,23 +96,38 @@ export function hasAuthErrors(errors: AuthFieldErrors): boolean {
 }
 
 /** Map API / network failures to friendly copy (matches iOS AuthStore). */
-export function friendlyAuthError(error: unknown, registering: boolean): string {
+export function friendlyAuthError(
+  error: unknown,
+  registering: boolean,
+  options?: { social?: boolean }
+): string {
+  const social = options?.social === true;
   if (error instanceof AuthApiError) {
     if (error.status === 401) {
+      if (social || /google|apple|social|token|audience|verified email/i.test(error.message)) {
+        return error.message.trim() || 'Social sign-in failed. Please try again.';
+      }
       return registering
         ? 'We couldn’t create your account. Please try again.'
         : 'Incorrect username or password.';
     }
-    if (error.status === 409 || /already/i.test(error.message)) {
+    if (error.status === 409) {
+      return error.message.trim() || 'That username or email is already taken.';
+    }
+    if (/already/i.test(error.message) && !social) {
       return 'That username or email is already taken.';
     }
     if (error.status === 400 || error.status === 422) {
       const lower = error.message.toLowerCase();
+      if (social && error.message.trim()) return error.message;
       if (lower.includes('email')) return 'Please enter a valid email address.';
       if (lower.includes('password')) return 'Password must be at least 8 characters.';
       if (lower.includes('username')) return 'Please choose a different username.';
       if (error.message.trim()) return error.message;
       return 'Please check your details and try again.';
+    }
+    if (error.status === 503) {
+      return error.message.trim() || 'Social sign-in is not configured yet.';
     }
     if (error.status === 0) {
       return 'Can’t reach Aura Fresh right now. Check your connection and try again.';

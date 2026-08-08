@@ -220,6 +220,7 @@ export default function App() {
           id: user.id || prev.id,
           name: displayNameFromUser(user),
           email: user.email || prev.email,
+          authProvider: user.provider || prev.authProvider,
         }));
       } catch {
         if (cancelled) return;
@@ -797,6 +798,7 @@ export default function App() {
             id: user.id || prev.id,
             name: displayName,
             email: user.email || prev.email,
+            authProvider: user.provider || prev.authProvider,
           }));
         }}
       />
@@ -820,6 +822,7 @@ export default function App() {
           storeToken(null);
           setIsSignedIn(false);
           setIsProfileOpen(false);
+          setProfile((prev) => ({ ...prev, authProvider: undefined }));
           handleAddToast('Signed out', 'Come back anytime for fresh groceries.', 'info');
         }}
       />

@@ -6,12 +6,15 @@ const API_BASE =
 
 const TOKEN_KEY = 'aura-fresh-auth-token';
 
+export type AuthProvider = 'LOCAL' | 'GOOGLE' | 'APPLE';
+
 export type AuthUser = {
   id: string;
   firstName?: string;
   lastName?: string;
   username?: string;
   email?: string;
+  provider?: AuthProvider | string;
 };
 
 function apiUrl(path: string): string {
@@ -96,6 +99,16 @@ export async function registerUser(payload: {
   return data.token;
 }
 
+export async function loginWithSocial(
+  provider: 'GOOGLE' | 'APPLE',
+  idToken: string
+): Promise<string> {
+  const data = await postJson<{ token: string }>('/auth/social', { provider, idToken });
+  if (!data?.token) throw new AuthApiError(500, 'Missing token');
+  storeToken(data.token);
+  return data.token;
+}
+
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   let res: Response;
   try {
@@ -121,6 +134,7 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
     lastName: user.lastName,
     username: user.username,
     email: user.email,
+    provider: user.provider,
   };
 }
 

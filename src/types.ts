@@ -78,6 +78,8 @@ export interface UserProfile {
   name: string;
   email: string;
   avatarUrl: string;
+  /** Auth method from API: LOCAL | GOOGLE | APPLE */
+  authProvider?: string;
   loyaltyPoints: number;
   balance: number; // Simulated wallet balance
   addresses: DeliveryAddress[];

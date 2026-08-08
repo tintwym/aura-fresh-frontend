@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  X, User, MapPin, CreditCard, Shield, Gift, Link2, Download, Trash2, CheckCircle2,
+  X, User, MapPin, CreditCard, Shield, Gift, Download, Trash2, CheckCircle2,
   Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight
 } from 'lucide-react';
 import { UserProfile, DeliveryAddress, PaymentMethod, Order } from '../types';
@@ -65,12 +65,6 @@ export default function UserProfileModal({
 }: UserProfileModalProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'orders' | 'addresses' | 'payments' | 'loyalty' | 'gdpr'>('profile');
   const [orderStatusFilter, setOrderStatusFilter] = useState<'All' | 'Pending' | 'Delivered' | 'Cancelled'>('All');
-  const [socialLinked, setSocialLinked] = useState({
-    google: true,
-    facebook: false,
-    apple: false
-  });
-
   // Real orders only (API + in-session profile history)
   const allOrdersList = useMemo(() => {
     const liveAndProfileOrders = [...orders, ...(profile.orderHistory || [])];
@@ -284,18 +278,6 @@ export default function UserProfileModal({
     }));
     onUpdateProfile({ ...profile, paymentMethods: updated });
     onAddToast('Default Billing Saved', 'Preferred payment method updated.', 'success');
-  };
-
-  const toggleSocialLink = (provider: 'google' | 'facebook' | 'apple') => {
-    setSocialLinked(prev => {
-      const updated = { ...prev, [provider]: !prev[provider] };
-      onAddToast(
-        updated[provider] ? 'Account Linked' : 'Account Unlinked',
-        `Secure OAuth2 integration with ${provider.charAt(0).toUpperCase() + provider.slice(1)} updated.`,
-        updated[provider] ? 'success' : 'info'
-      );
-      return updated;
-    });
   };
 
   // GDPR Actions
@@ -558,39 +540,23 @@ export default function UserProfileModal({
                 <div className="border-t border-slate-100 dark:border-white/10 pt-6">
                   <h5 className="font-semibold text-sm text-slate-800 dark:text-white mb-3 flex items-center gap-1.5">
                     <Lock className="w-4 h-4 text-emerald-400" />
-                    Secure Social Connections (OAuth2)
+                    Sign-in method
                   </h5>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                    Enable lightning-fast checkout integrations by securely linking your verified social identities.
+                    How you access Aura Fresh. Social accounts are verified by Google or Apple.
                   </p>
-
-                  <div className="space-y-2 max-w-md">
-                    {[
-                      { id: 'google', label: 'Google Account', color: 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/50' },
-                      { id: 'facebook', label: 'Facebook Connect', color: 'bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/50' },
-                      { id: 'apple', label: 'Sign in with Apple', color: 'bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/10' }
-                    ].map(prov => {
-                      const linked = socialLinked[prov.id as keyof typeof socialLinked];
-                      return (
-                        <div key={prov.id} className={`flex items-center justify-between p-3 rounded-xl border ${prov.color}`}>
-                          <div className="flex items-center gap-2">
-                            <Link2 className="w-4 h-4" />
-                            <span className="text-sm font-medium">{prov.label}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleSocialLink(prov.id as any)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              linked
-                                ? 'bg-emerald-500 text-black font-extrabold'
-                                : 'bg-white dark:bg-[#161616] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-50'
-                            }`}
-                          >
-                            {linked ? 'Connected' : 'Connect'}
-                          </button>
-                        </div>
-                      );
-                    })}
+                  <div className="max-w-md rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 dark:border-white/10 dark:bg-[#161616]">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                      {(() => {
+                        const p = (profile.authProvider || 'LOCAL').toUpperCase();
+                        if (p === 'GOOGLE') return 'Signed in with Google';
+                        if (p === 'APPLE') return 'Signed in with Apple';
+                        return 'Signed in with username & password';
+                      })()}
+                    </p>
+                    {profile.email ? (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{profile.email}</p>
+                    ) : null}
                   </div>
                 </div>
               </div>
