@@ -242,7 +242,7 @@ export default function App() {
             {
               id,
               title: 'Catalog offline',
-              message: 'Showing demo products. Start the API on :8080 for live stock and checkout.',
+              message: 'Showing demo products. Could not reach the Aura Fresh API — check your connection or try again shortly.',
               type: 'warning',
             },
           ]);
