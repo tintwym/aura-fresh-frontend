@@ -58,8 +58,8 @@ Copy `.env.example` to `.env` for local development.
 
 | Variable | Local | Vercel / production |
 |----------|-------|---------------------|
-| `API_PROXY_TARGET` | `http://127.0.0.1:8080` | Not used |
-| `VITE_API_BASE_URL` | Leave unset (uses `/api` proxy) | `https://YOUR-API-HOST/api` |
+| `API_PROXY_TARGET` | `http://127.0.0.1:8080` | Not used (see `vercel.json` rewrites) |
+| `VITE_API_BASE_URL` | Leave unset (uses `/api` proxy) | **Not required** — `vercel.json` proxies `/api` to Cloud Run |
 | `GEMINI_API_KEY` | Smart Recipes via `server.ts` | Smart Recipes via `api/recipes.ts` |
 | `VITE_GOOGLE_CLIENT_ID` | Google Sign-In (must match backend) | Same |
 | `PORT` | `3000` | Set by Vercel |
@@ -76,17 +76,18 @@ On the backend, set `APP_FRONTEND_BASE_URL` to your deployed client URL (CORS + 
 3. Build settings (also in `vercel.json`):
    - **Build command:** `npm run build:vercel`
    - **Output directory:** `dist`
-4. Add environment variables:
+4. Optional environment variables:
 
    | Variable | Value |
    |----------|--------|
-   | `VITE_API_BASE_URL` | `https://YOUR-API-HOST/api` |
    | `GEMINI_API_KEY` | Optional — enables Smart Recipes |
    | `VITE_GOOGLE_CLIENT_ID` | If using Google Sign-In |
 
-5. Redeploy after changing `VITE_*` variables (they are baked in at build time).
+   **No `VITE_API_BASE_URL` needed.** [`vercel.json`](vercel.json) forwards `/api/*` to Cloud Run automatically.
 
-Smart Recipes runs as a Vercel serverless function at [`api/recipes.ts`](api/recipes.ts). All other API calls go directly to your Spring Boot host via `VITE_API_BASE_URL`.
+5. Redeploy after any config change.
+
+Smart Recipes runs as a Vercel serverless function at [`api/recipes.ts`](api/recipes.ts). All other API calls use same-origin `/api` (proxied to Cloud Run).
 
 ---
 

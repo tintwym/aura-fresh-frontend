@@ -5,6 +5,10 @@
   "framework": null,
   "rewrites": [
     { "source": "/api/recipes", "destination": "/api/recipes" },
+    {
+      "source": "/api/:path*",
+      "destination": "https://shopping-cart-backend-932173135601.asia-southeast1.run.app/api/:path*"
+    },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
