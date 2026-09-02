@@ -501,6 +501,11 @@ export default function GroceryCatalog({
                     <span className="shrink-0 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold tracking-wide uppercase bg-emerald-500/10 dark:bg-emerald-950/20 px-1.5 py-0.5 rounded">
                       {item.category}
                     </span>
+                    {item.expiryDate && (
+                      <span className="shrink-0 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded-full">
+                        Exp {item.expiryDate}
+                      </span>
+                    )}
                     {item.dietaryRestrictions.slice(0, 2).map((r) => (
                       <span
                         key={r}

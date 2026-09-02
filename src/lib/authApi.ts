@@ -1,3 +1,4 @@
+import type { UserProfile } from '../types';
 import { AuthApiError } from './authValidation';
 
 const API_BASE =
@@ -16,6 +17,43 @@ export type AuthUser = {
   email?: string;
   provider?: AuthProvider | string;
 };
+
+/** Guest / signed-out profile — no demo customer data. */
+export function createEmptyProfile(): UserProfile {
+  return {
+    id: '',
+    name: '',
+    email: '',
+    avatarUrl: '',
+    loyaltyPoints: 0,
+    balance: 0,
+    orderHistory: [],
+    redeemedCoupons: [],
+    walletTopUpsUsed: 0,
+    addresses: [],
+    paymentMethods: [],
+  };
+}
+
+export function avatarUrlForName(name: string): string {
+  const label = name.trim() || 'Aura';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(label)}&background=10b981&color=ffffff&size=128`;
+}
+
+/** Map API auth user onto UI profile, clearing leftover demo fields for new accounts. */
+export function profileFromAuthUser(user: AuthUser, displayName: string, prev?: UserProfile): UserProfile {
+  const sameUser = Boolean(prev?.id && user.id && prev.id === user.id);
+  const base = sameUser && prev ? prev : createEmptyProfile();
+  const name = displayName.trim() || displayNameFromUser(user);
+  return {
+    ...base,
+    id: user.id || base.id,
+    name,
+    email: user.email?.trim() || (sameUser ? base.email : ''),
+    authProvider: user.provider || base.authProvider,
+    avatarUrl: sameUser && prev?.avatarUrl ? prev.avatarUrl : avatarUrlForName(name),
+  };
+}
 
 function apiUrl(path: string): string {
   const base = String(API_BASE).replace(/\/$/, '');
@@ -136,12 +174,6 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
     email: user.email,
     provider: user.provider,
   };
-}
-
-export async function loginAdmin(username: string, password: string): Promise<string> {
-  const data = await postJson<{ token: string }>('/auth/admins/login', { username, password });
-  if (!data?.token) throw new AuthApiError(500, 'Missing token');
-  return data.token;
 }
 
 export function displayNameFromUser(user: AuthUser): string {

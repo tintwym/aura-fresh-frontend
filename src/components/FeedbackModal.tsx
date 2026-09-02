@@ -7,7 +7,7 @@ interface FeedbackModalProps {
   order: Order;
   isOpen: boolean;
   onClose: () => void;
-  onSubmitFeedback: (orderId: string, rating: number, comment: string) => void;
+  onSubmitFeedback: (orderId: string, rating: number, comment: string) => void | Promise<void>;
 }
 
 export default function FeedbackModal({
@@ -20,20 +20,28 @@ export default function FeedbackModal({
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [comment, setComment] = useState<string>('');
   const [submitted, setSubmitted] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
   // Get first item's zone as the specific shop/zone for the review
   const specificZone = order.items[0]?.item.availabilityZone || 'Bahan Depot';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmitFeedback(order.id, rating, comment);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      onClose();
-    }, 2000);
+    setIsSubmitting(true);
+    try {
+      await onSubmitFeedback(order.id, rating, comment);
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        onClose();
+      }, 2000);
+    } catch {
+      /* parent shows toast */
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -141,9 +149,10 @@ export default function FeedbackModal({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-extrabold rounded-xl shadow-md shadow-emerald-500/10 transition-all cursor-pointer"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-black text-xs font-extrabold rounded-xl shadow-md shadow-emerald-500/10 transition-all cursor-pointer"
                 >
-                  Submit Review
+                  {isSubmitting ? 'Submitting…' : 'Submit Review'}
                 </button>
               </div>
             </form>

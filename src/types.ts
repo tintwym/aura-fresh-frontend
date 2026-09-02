@@ -15,6 +15,8 @@ export interface GroceryItem {
   isSubscriptionAvailable: boolean;
   rating: number;
   unit: string; // e.g., "500g", "1kg", "1 liter", "dozen"
+  /** Shown for meat & dairy when the API provides expiryDate. */
+  expiryDate?: string;
 }
 
 export interface CartItem {
@@ -22,6 +24,8 @@ export interface CartItem {
   quantity: number;
   isSubscription: boolean;
   frequency?: 'weekly' | 'biweekly' | 'monthly';
+  /** Present on order history lines — required for product reviews. */
+  orderItemId?: string;
 }
 
 export interface DeliveryAddress {

@@ -6,6 +6,7 @@ import {
 import { CartItem, UserProfile, DeliveryAddress, GroceryItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { createCheckoutSession, syncCartToApi } from '../lib/shopApi';
+import { persistDefaultAddress } from '../lib/profileApi';
 import { AuthApiError } from '../lib/authValidation';
 
 interface CartAndCheckoutProps {
@@ -228,6 +229,9 @@ export default function CartAndCheckout({
 
     setIsProcessing(true);
     try {
+      setProcessingStatus('Saving delivery address…');
+      await persistDefaultAddress([activeAddress]);
+
       setProcessingStatus('Syncing your cart with Aura Fresh…');
       const merged = new Map<string, number>();
       for (const line of cart) {

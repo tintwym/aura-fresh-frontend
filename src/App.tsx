@@ -16,7 +16,6 @@ import CartAndCheckout from './components/CartAndCheckout';
 import OrderTracker from './components/OrderTracker';
 import UserProfileModal from './components/UserProfileModal';
 import AuthModal from './components/AuthModal';
-import AdminPage from './components/AdminPage';
 import NotificationCenter, { NotificationMsg } from './components/NotificationCenter';
 import ToastContainer, { ToastMessage } from './components/ToastContainer';
 import QuickReorder from './components/QuickReorder';
@@ -28,13 +27,22 @@ import OrderDetailsModal from './components/OrderDetailsModal';
 import NavbarSearch from './components/NavbarSearch';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
 import {
+  createEmptyProfile,
   displayNameFromUser,
   fetchCurrentUser,
   getStoredToken,
+  profileFromAuthUser,
   storeToken,
 } from './lib/authApi';
-import { fetchOrderHistory, fetchProducts } from './lib/shopApi';
-import { mapApiOrderToUiOrder, mapProductToGrocery } from './lib/mapProduct';
+import { fetchOrderHistory, fetchProducts, fetchCart, syncCartToApi } from './lib/shopApi';
+import { mapApiOrderToUiOrder, mapApiCartToCartItems, mapProductToGrocery } from './lib/mapProduct';
+import {
+  fetchProfile,
+  persistDefaultAddress,
+  profileToAddresses,
+} from './lib/profileApi';
+import { submitReview } from './lib/reviewApi';
+import { AuthApiError } from './lib/authValidation';
 
 export default function App() {
   type ThemePref = 'system' | 'light' | 'dark';
@@ -142,63 +150,8 @@ export default function App() {
     'g8': 2  // Milk
   });
 
-  // Customer Profile Initialization with preloaded test parameters
-  const [profile, setProfile] = useState<UserProfile>({
-    id: 'USR_882910',
-    name: 'Thura Kyaw',
-    email: 'thurakyaw@example.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-    loyaltyPoints: 180, // Preloaded points to allow instant rewards tests!
-    balance: 150000,   // Preloaded 150,000 MMK to allow instant checkout testing!
-    orderHistory: [],
-    redeemedCoupons: [],
-    walletTopUpsUsed: 0,
-    addresses: [
-      {
-        id: 'addr_default',
-        name: 'My Penthouse',
-        addressLine: 'Room 1402, Yankin Tower A (Yankin)',
-        city: 'Yangon',
-        state: 'Yangon Region',
-        zipCode: '11201',
-        phone: '09975112233',
-        isDefault: true
-      },
-      {
-        id: 'addr_office',
-        name: 'Downtown Office',
-        addressLine: 'Level 18, Junction City Office Tower (Downtown Yangon)',
-        city: 'Yangon',
-        state: 'Yangon Region',
-        zipCode: '11181',
-        phone: '09450001122',
-        isDefault: false
-      }
-    ],
-    paymentMethods: [
-      {
-        id: 'pay_default',
-        type: 'kbzpay',
-        accountName: 'Thura Kyaw',
-        accountNumber: '09975112233',
-        isDefault: true
-      },
-      {
-        id: 'pay_wave',
-        type: 'wavepay',
-        accountName: 'Thura Kyaw',
-        accountNumber: '09450001122',
-        isDefault: false
-      },
-      {
-        id: 'pay_mmqr',
-        type: 'mmqr',
-        accountName: 'Thura Kyaw (MMQR Interoperable)',
-        accountNumber: 'MMQR-09975112233',
-        isDefault: false
-      }
-    ]
-  });
+  // Real account fields come from the API after sign-in (no demo customer).
+  const [profile, setProfile] = useState<UserProfile>(() => createEmptyProfile());
 
   const navigate = useNavigate();
 
@@ -215,17 +168,29 @@ export default function App() {
         const user = await fetchCurrentUser(token);
         if (cancelled) return;
         setIsSignedIn(true);
-        setProfile((prev) => ({
-          ...prev,
-          id: user.id || prev.id,
-          name: displayNameFromUser(user),
-          email: user.email || prev.email,
-          authProvider: user.provider || prev.authProvider,
-        }));
+        setProfile((prev) => profileFromAuthUser(user, displayNameFromUser(user), prev));
+        const [apiProfile, apiCart] = await Promise.all([
+          fetchProfile().catch(() => null),
+          fetchCart().catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (apiProfile) {
+          const addresses = profileToAddresses(apiProfile);
+          if (addresses.length) {
+            setProfile((prev) => ({ ...prev, addresses }));
+          }
+        }
+        if (apiCart?.cartItems?.length) {
+          setCart((prev) => {
+            const fromApi = mapApiCartToCartItems(apiCart, groceries);
+            return fromApi.length ? fromApi : prev;
+          });
+        }
       } catch {
         if (cancelled) return;
         storeToken(null);
         setIsSignedIn(false);
+        setProfile(createEmptyProfile());
       }
     })();
     return () => {
@@ -419,6 +384,51 @@ export default function App() {
 
   const handleClearCart = () => {
     setCart([]);
+    if (isSignedIn && getStoredToken()) {
+      syncCartToApi([]).catch(() => undefined);
+    }
+  };
+
+  const handleUpdateProfile = (
+    updater: UserProfile | ((prev: UserProfile) => UserProfile),
+  ) => {
+    setProfile((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (isSignedIn && next.addresses !== prev.addresses && next.addresses.length > 0) {
+        persistDefaultAddress(next.addresses).catch((err) => {
+          const msg = err instanceof AuthApiError ? err.message : 'Could not save address';
+          handleAddToast('Profile sync failed', msg, 'warning');
+        });
+      }
+      return next;
+    });
+  };
+
+  const hydrateAfterSignIn = async () => {
+    try {
+      const [apiProfile, apiCart, apiOrders] = await Promise.all([
+        fetchProfile().catch(() => null),
+        fetchCart().catch(() => null),
+        fetchOrderHistory().catch(() => []),
+      ]);
+      if (apiProfile) {
+        const addresses = profileToAddresses(apiProfile);
+        if (addresses.length) {
+          setProfile((prev) => ({ ...prev, addresses }));
+        }
+      }
+      if (apiCart?.cartItems?.length) {
+        setCart((prev) => {
+          const fromApi = mapApiCartToCartItems(apiCart, groceries);
+          return fromApi.length ? fromApi : prev;
+        });
+      }
+      if (apiOrders.length) {
+        setOrders(apiOrders.map((o) => mapApiOrderToUiOrder(o, groceries)));
+      }
+    } catch {
+      /* non-fatal */
+    }
   };
 
   // Order status management
@@ -486,18 +496,29 @@ export default function App() {
     }
   };
 
-  const handleSubmitFeedback = (orderId: string, rating: number, comment: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, feedback: { rating, comment } } : o));
-    handleAddToast('Review Shared! ⭐', 'Your feedback was dispatched to store supervisors.', 'success');
-  };
-
-  // Restocking (Admin Action)
-  const handleRestockItem = (itemId: string, amount: number) => {
-    setGroceries(prev => prev.map(item =>
-      item.id === itemId
-        ? { ...item, stock: Math.min(item.maxStock, item.stock + amount) }
-        : item
-    ));
+  const handleSubmitFeedback = async (orderId: string, rating: number, comment: string) => {
+    const order = orders.find((o) => o.id === orderId) || showFeedbackOrder;
+    const line = order?.items.find((i) => i.orderItemId);
+    if (!line?.orderItemId) {
+      handleAddToast('Review unavailable', 'This order cannot be reviewed yet.', 'warning');
+      return;
+    }
+    try {
+      await submitReview({
+        productId: line.item.id,
+        orderItemId: line.orderItemId,
+        rating,
+        comment: comment.trim() || 'No comment',
+      });
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, feedback: { rating, comment } } : o)),
+      );
+      handleAddToast('Review shared', 'Thank you — your feedback helps our team.', 'success');
+    } catch (err) {
+      const msg = err instanceof AuthApiError ? err.message : 'Could not submit review';
+      handleAddToast('Review failed', msg, 'warning');
+      throw err;
+    }
   };
 
   return (
@@ -505,21 +526,6 @@ export default function App() {
       <ToastContainer toasts={toasts} onRemove={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
 
       <Routes>
-        <Route
-          path="/admin"
-          element={
-            <AdminPage
-              groceries={groceries}
-              orders={orders}
-              onRestock={handleRestockItem}
-              onUpdateOrderStatus={handleUpdateOrderStatus}
-              onGroceriesLoaded={setGroceries}
-              onOrdersLoaded={setOrders}
-              onAddToast={handleAddToast}
-              onAddNotification={handleAddNotification}
-            />
-          }
-        />
         <Route
           path="/payment/success"
           element={
@@ -639,12 +645,18 @@ export default function App() {
                 className="hidden sm:flex items-center gap-2 border border-slate-200 dark:border-white/10 p-1 rounded-full hover:bg-slate-50 dark:hover:bg-[#161616] transition-colors cursor-pointer"
                 aria-label="Open customer profile"
               >
-                <img
-                  src={profile.avatarUrl}
-                  alt="Avatar"
-                  className="w-7 h-7 rounded-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+                {profile.avatarUrl ? (
+                  <img
+                    src={profile.avatarUrl}
+                    alt=""
+                    className="w-7 h-7 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-600">
+                    {(profile.name || 'A').charAt(0).toUpperCase()}
+                  </span>
+                )}
               </button>
             ) : (
               <button
@@ -676,7 +688,7 @@ export default function App() {
               Aura Fresh — organic groceries, delivered.
             </h2>
             <p className="text-xs md:text-sm text-slate-300 leading-relaxed max-w-md">
-              Order premium Shan State avocados, traditional Handmade chickpea tofu, and aromatic Shwe Bo Paw San rice securely. Supports KBZPay, WavePay, AYA Pay, and MPU debit cards. Fully compliant with GDPR data policies.
+              Order premium Shan State avocados, traditional handmade chickpea tofu, and aromatic Shwe Bo Paw San rice securely. Pay with Stripe Checkout (MMK). Fully compliant with GDPR data policies.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -752,7 +764,7 @@ export default function App() {
               <div className="text-xs text-slate-300 space-y-1">
                 <p className="font-bold text-white">General Data Protection Regulation (GDPR) Invariant Notice</p>
                 <p className="leading-relaxed">
-                  We collect your preferred delivery zones, phone lines, and billing parameters purely to authorize local Myanmar banking (KBZPay, WavePay, AYA Pay). This data is cached locally under strong cryptographic measures. By clicking accept, you consent to our security rules.
+                  We collect delivery zones and contact details to fulfill orders and process Stripe payments. Data is stored securely on Aura Fresh servers. By clicking accept, you consent to our privacy policy.
                 </p>
               </div>
             </div>
@@ -793,13 +805,8 @@ export default function App() {
         onAddToast={handleAddToast}
         onAuthenticated={(user, displayName) => {
           setIsSignedIn(true);
-          setProfile((prev) => ({
-            ...prev,
-            id: user.id || prev.id,
-            name: displayName,
-            email: user.email || prev.email,
-            authProvider: user.provider || prev.authProvider,
-          }));
+          setProfile((prev) => profileFromAuthUser(user, displayName, prev));
+          void hydrateAfterSignIn();
         }}
       />
 
@@ -809,20 +816,14 @@ export default function App() {
         orders={orders}
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
-        onUpdateProfile={(updater) => {
-          if (typeof updater === 'function') {
-            setProfile(updater);
-          } else {
-            setProfile(updater);
-          }
-        }}
+        onUpdateProfile={handleUpdateProfile}
         onClearOrders={() => setOrders([])}
         onAddToast={handleAddToast}
         onSignOut={() => {
           storeToken(null);
           setIsSignedIn(false);
           setIsProfileOpen(false);
-          setProfile((prev) => ({ ...prev, authProvider: undefined }));
+          setProfile(createEmptyProfile());
           handleAddToast('Signed out', 'Come back anytime for fresh groceries.', 'info');
         }}
       />
@@ -847,7 +848,7 @@ export default function App() {
             onRemoveFromCart={handleRemoveFromCart}
             onClearCart={handleClearCart}
             profile={profile}
-            onUpdateProfile={setProfile}
+            onUpdateProfile={handleUpdateProfile}
             onAddToast={handleAddToast}
             onClose={() => setIsCartOpen(false)}
             isSignedIn={isSignedIn}
@@ -889,8 +890,6 @@ export default function App() {
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
       />
-
-      {/* Administration Hub lives at /admin */}
 
       {/* Voice Assistant & Command Search Modal */}
       <VoiceSearchModal
@@ -1033,14 +1032,26 @@ export default function App() {
           }`}
         >
           {isSignedIn ? (
-            <img
-              src={profile.avatarUrl}
-              alt="Profile"
-              className={`w-5 h-5 rounded-full object-cover border ${
-                isProfileOpen ? 'border-emerald-500' : 'border-slate-300 dark:border-white/20'
-              }`}
-              referrerPolicy="no-referrer"
-            />
+            profile.avatarUrl ? (
+              <img
+                src={profile.avatarUrl}
+                alt=""
+                className={`w-5 h-5 rounded-full object-cover border ${
+                  isProfileOpen ? 'border-emerald-500' : 'border-slate-300 dark:border-white/20'
+                }`}
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                  isProfileOpen
+                    ? 'border-emerald-500 text-emerald-600'
+                    : 'border-slate-300 text-slate-500 dark:border-white/20'
+                }`}
+              >
+                {(profile.name || 'A').charAt(0).toUpperCase()}
+              </span>
+            )
           ) : (
             <LogIn className="w-5 h-5" />
           )}

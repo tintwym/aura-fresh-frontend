@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, User, MapPin, CreditCard, Shield, Gift, Download, Trash2, CheckCircle2,
   Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight
@@ -140,11 +140,19 @@ export default function UserProfileModal({
     return data;
   }, [orders]);
 
-  // Edit states
+  // Edit states — sync from server/auth profile when modal opens or identity changes
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [profileErrors, setProfileErrors] = useState<{ name?: string; email?: string }>({});
   const [didAttemptProfileSave, setDidAttemptProfileSave] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setName(profile.name);
+    setEmail(profile.email);
+    setProfileErrors({});
+    setDidAttemptProfileSave(false);
+  }, [isOpen, profile.id, profile.name, profile.email]);
 
   // Address add state
   const [newAddress, setNewAddress] = useState({
@@ -308,20 +316,27 @@ export default function UserProfileModal({
         <div className="p-3 sm:p-4 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-[#121212] shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
             <div className="relative shrink-0">
-              <img
-                src={profile.avatarUrl}
-                alt="Avatar"
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 border-emerald-500 object-cover"
-                referrerPolicy="no-referrer"
-              />
+              {profile.avatarUrl ? (
+                <img
+                  src={profile.avatarUrl}
+                  alt=""
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 border-emerald-500 object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/15 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                  {(profile.name || '?').trim().charAt(0).toUpperCase()}
+                </div>
+              )}
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-500 border-2 border-white dark:border-[#0F0F0F] rounded-full" />
             </div>
             <div className="min-w-0">
               <h3 className="font-display font-bold text-base sm:text-lg text-slate-800 dark:text-white leading-tight truncate">
-                Account Settings & Preferences
+                {profile.name?.trim() || 'Your account'}
               </h3>
               <p className="text-[11px] sm:text-xs text-emerald-600 dark:text-emerald-400 font-mono truncate">
-                ID: {profile.id} • {profile.loyaltyPoints} Loyalty Points
+                {profile.email?.trim() || (profile.id ? `ID: ${profile.id}` : 'Signed in')}
+                {profile.loyaltyPoints > 0 ? ` • ${profile.loyaltyPoints} pts` : ''}
               </p>
             </div>
           </div>

@@ -1,8 +1,17 @@
 import { INITIAL_GROCERIES } from '../data/groceries';
 import type { DietaryRestriction, GroceryItem, Order, OrderStatus, PaymentMethod, DeliveryAddress, CartItem } from '../types';
-import type { ApiOrder, ApiProduct } from './shopApi';
+import type { ApiCart, ApiOrder, ApiProduct } from './shopApi';
 
 const META_BY_NAME = new Map(INITIAL_GROCERIES.map((g) => [g.name.toLowerCase(), g]));
+
+const MEAT_DAIRY = /\b(meat|dairy|beef|chicken|pork|fish|milk|cheese|yogurt|butter)\b/i;
+
+function formatExpiry(expiryDate?: string): string | undefined {
+  if (!expiryDate) return undefined;
+  const d = new Date(expiryDate);
+  if (Number.isNaN(d.getTime())) return expiryDate;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export function mapProductToGrocery(p: ApiProduct): GroceryItem {
   const meta = META_BY_NAME.get((p.name || '').toLowerCase());
@@ -11,11 +20,14 @@ export function mapProductToGrocery(p: ApiProduct): GroceryItem {
     meta?.imageUrl ||
     'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80';
 
+  const category = p.category?.trim() || meta?.category || 'General';
+  const needsExpiry = MEAT_DAIRY.test(category) || MEAT_DAIRY.test(p.name || '');
+
   return {
     id: String(p.id),
     name: p.name,
     description: p.description || meta?.description || '',
-    category: meta?.category || 'General',
+    category,
     price: Number(p.price),
     currency: meta?.currency || 'MMK',
     imageUrl,
@@ -26,7 +38,27 @@ export function mapProductToGrocery(p: ApiProduct): GroceryItem {
     isSubscriptionAvailable: meta?.isSubscriptionAvailable ?? false,
     rating: meta?.rating ?? 0,
     unit: meta?.unit || 'unit',
+    expiryDate: needsExpiry ? formatExpiry(p.expiryDate) : undefined,
   };
+}
+
+export function mapApiCartToCartItems(cart: ApiCart | null, catalog: GroceryItem[]): CartItem[] {
+  if (!cart?.cartItems?.length) return [];
+  return cart.cartItems
+    .map((line) => {
+      const productId = String(line.product?.id ?? '');
+      if (!productId) return null;
+      const item =
+        catalog.find((g) => g.id === productId) ||
+        (line.product ? mapProductToGrocery(line.product) : null);
+      if (!item) return null;
+      return {
+        item,
+        quantity: line.quantity,
+        isSubscription: false,
+      };
+    })
+    .filter((line): line is CartItem => line != null);
 }
 
 function mapApiStatus(status?: string): OrderStatus {
@@ -55,16 +87,33 @@ const fallbackPayment: PaymentMethod = {
   isDefault: true,
 };
 
-const fallbackAddress: DeliveryAddress = {
-  id: 'addr_api',
-  name: 'Delivery',
-  addressLine: 'Saved at checkout',
-  city: 'Yangon',
-  state: 'Yangon Region',
-  zipCode: '',
-  phone: '',
-  isDefault: true,
-};
+function deliveryFromOrder(order: ApiOrder): DeliveryAddress {
+  const line = [order.deliveryAddress1, order.deliveryAddress2, order.deliveryUnit, order.deliveryFloor]
+    .filter(Boolean)
+    .join(', ');
+  if (!line && !order.deliveryCity) {
+    return {
+      id: 'addr_api',
+      name: 'Delivery',
+      addressLine: 'Address on file',
+      city: 'Yangon',
+      state: 'Yangon Region',
+      zipCode: '',
+      phone: '',
+      isDefault: true,
+    };
+  }
+  return {
+    id: 'addr_order',
+    name: 'Delivery',
+    addressLine: line || order.deliveryCity || '',
+    city: order.deliveryCity || 'Yangon',
+    state: order.deliveryState || 'Yangon Region',
+    zipCode: order.deliveryZipCode || '',
+    phone: '',
+    isDefault: true,
+  };
+}
 
 export function mapApiOrderToUiOrder(order: ApiOrder, catalog: GroceryItem[]): Order {
   const items: CartItem[] = (order.orderItems || []).map((line) => {
@@ -95,8 +144,11 @@ export function mapApiOrderToUiOrder(order: ApiOrder, catalog: GroceryItem[]): O
       item,
       quantity: line.quantity,
       isSubscription: false,
+      orderItemId: line.id,
     };
   });
+
+  const status = mapApiStatus(order.status);
 
   return {
     id: order.id,
@@ -104,16 +156,16 @@ export function mapApiOrderToUiOrder(order: ApiOrder, catalog: GroceryItem[]): O
     totalAmount: Number(order.totalPrice),
     currency: 'MMK',
     paymentMethod: fallbackPayment,
-    deliveryAddress: fallbackAddress,
-    status: mapApiStatus(order.status),
+    deliveryAddress: deliveryFromOrder(order),
+    status,
     createdAt: order.createdAt || new Date().toISOString(),
     deliveryLat: 16.8,
     deliveryLng: 96.15,
-    step: mapApiStatus(order.status) === 'delivered'
+    step: status === 'delivered'
       ? 4
-      : mapApiStatus(order.status) === 'out_for_delivery'
+      : status === 'out_for_delivery'
         ? 3
-        : mapApiStatus(order.status) === 'processing'
+        : status === 'processing'
           ? 2
           : 1,
   };
