@@ -52,9 +52,8 @@ export function validateEmail(value: string): string | undefined {
 export function validatePassword(value: string, mode: AuthMode): string | undefined {
   if (!value) return 'Please enter your password.';
   if (value.length < 8) return 'Password must be at least 8 characters.';
-  if (mode === 'register' && value.length > 128) {
-    return 'Password must be 128 characters or fewer.';
-  }
+  if (value.length > 128) return 'Password must be 128 characters or fewer.';
+  // Backend RegisterUserRequest only enforces length — keep client rules aligned.
   return undefined;
 }
 

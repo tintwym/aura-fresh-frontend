@@ -23,6 +23,22 @@ import VoiceSearchModal from './components/VoiceSearchModal';
 import OrderCelebrationModal from './components/OrderCelebrationModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
+import StatusPage, {
+  NotFoundPage,
+  BadRequestPage,
+  UnauthorizedPage,
+  ForbiddenPage,
+  TimeoutPage,
+  TooManyRequestsPage,
+  ServerErrorPage,
+  BadGatewayPage,
+  ServiceUnavailablePage,
+  GatewayTimeoutPage,
+  OfflinePage,
+  MaintenancePage,
+  SessionExpiredPage,
+  PaymentFailedPage,
+} from './components/StatusPage';
 import {
   createEmptyProfile,
   displayNameFromUser,
@@ -186,11 +202,14 @@ export default function App() {
             return fromApi.length ? fromApi : prev;
           });
         }
-      } catch {
+      } catch (err) {
         if (cancelled) return;
         storeToken(null);
         setIsSignedIn(false);
         setProfile(createEmptyProfile());
+        if (err instanceof AuthApiError && (err.status === 401 || err.status === 403)) {
+          navigate('/error/session', { replace: true });
+        }
       }
     })();
     return () => {
@@ -303,12 +322,43 @@ export default function App() {
     };
   }, [isSignedIn]);
 
-  // Open cart when returning from Stripe cancel URL /cart
+  // Stripe cancel historically used /cart
   useEffect(() => {
     if (window.location.pathname === '/cart') {
-      setIsCartOpen(true);
-      navigate('/', { replace: true });
+      navigate('/payment/cancelled', { replace: true });
     }
+  }, [navigate]);
+
+  // Deep-link: /?auth=1 opens sign-in
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === '1' && window.location.pathname === '/') {
+      if (!getStoredToken()) setIsAuthOpen(true);
+      params.delete('auth');
+      const next = params.toString();
+      navigate(next ? `/?${next}` : '/', { replace: true });
+    }
+  }, [navigate]);
+
+  // Offline → dedicated status page (skip on payment success flow)
+  useEffect(() => {
+    const goOffline = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/payment/') || path.startsWith('/error/')) return;
+      navigate('/error/offline', { replace: false });
+    };
+    const goOnline = () => {
+      if (window.location.pathname === '/error/offline') {
+        navigate('/', { replace: true });
+      }
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) goOffline();
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
   }, [navigate]);
 
   const openAccount = () => {
@@ -540,7 +590,90 @@ export default function App() {
           }
         />
         <Route
-          path="*"
+          path="/payment/cancelled"
+          element={
+            <StatusPage
+              kind="payment-cancelled"
+              onOpenCart={() => {
+                setIsCartOpen(true);
+                navigate('/', { replace: true });
+              }}
+            />
+          }
+        />
+        <Route
+          path="/payment/failed"
+          element={
+            <PaymentFailedPage
+              onOpenCart={() => {
+                setIsCartOpen(true);
+                navigate('/', { replace: true });
+              }}
+            />
+          }
+        />
+
+        {/* HTTP status pages — short paths */}
+        <Route path="/400" element={<BadRequestPage />} />
+        <Route
+          path="/401"
+          element={
+            <UnauthorizedPage
+              onSignIn={() => {
+                navigate('/', { replace: true });
+                setIsAuthOpen(true);
+              }}
+            />
+          }
+        />
+        <Route path="/403" element={<ForbiddenPage />} />
+        <Route path="/404" element={<NotFoundPage />} />
+        <Route path="/408" element={<TimeoutPage />} />
+        <Route path="/429" element={<TooManyRequestsPage />} />
+        <Route path="/500" element={<ServerErrorPage />} />
+        <Route path="/502" element={<BadGatewayPage />} />
+        <Route path="/503" element={<ServiceUnavailablePage />} />
+        <Route path="/504" element={<GatewayTimeoutPage />} />
+
+        {/* Named aliases */}
+        <Route path="/error/bad-request" element={<BadRequestPage />} />
+        <Route
+          path="/error/unauthorized"
+          element={
+            <UnauthorizedPage
+              onSignIn={() => {
+                navigate('/', { replace: true });
+                setIsAuthOpen(true);
+              }}
+            />
+          }
+        />
+        <Route path="/error/forbidden" element={<ForbiddenPage />} />
+        <Route path="/error/not-found" element={<NotFoundPage />} />
+        <Route path="/error/timeout" element={<TimeoutPage />} />
+        <Route path="/error/too-many-requests" element={<TooManyRequestsPage />} />
+        <Route path="/error/server" element={<ServerErrorPage />} />
+        <Route path="/error/bad-gateway" element={<BadGatewayPage />} />
+        <Route path="/error/unavailable" element={<ServiceUnavailablePage />} />
+        <Route path="/error/gateway-timeout" element={<GatewayTimeoutPage />} />
+        <Route path="/error/offline" element={<OfflinePage />} />
+        <Route path="/error/maintenance" element={<MaintenancePage />} />
+        <Route
+          path="/error/session"
+          element={
+            <SessionExpiredPage
+              onSignIn={() => {
+                storeToken(null);
+                setIsSignedIn(false);
+                navigate('/', { replace: true });
+                setIsAuthOpen(true);
+              }}
+            />
+          }
+        />
+        <Route path="/error" element={<StatusPage kind="unexpected" />} />
+        <Route
+          path="/"
           element={
     <div className="min-h-screen pb-20 sm:pb-8 text-[#1a2e24] dark:text-[#e7efe9] transition-colors duration-300">
       {/* HEADER NAVBAR */}
@@ -1083,6 +1216,7 @@ export default function App() {
     </div>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>
   );

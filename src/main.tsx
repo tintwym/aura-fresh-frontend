@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {BrowserRouter} from 'react-router-dom';
 import {GoogleOAuthProvider} from '@react-oauth/google';
 import App from './App.tsx';
+import ErrorBoundary from './components/ErrorBoundary.tsx';
 import './index.css';
 
 const googleClientId = String(
@@ -12,13 +13,15 @@ const googleClientId = String(
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      {googleClientId ? (
-        <GoogleOAuthProvider clientId={googleClientId}>
+      <ErrorBoundary>
+        {googleClientId ? (
+          <GoogleOAuthProvider clientId={googleClientId}>
+            <App />
+          </GoogleOAuthProvider>
+        ) : (
           <App />
-        </GoogleOAuthProvider>
-      ) : (
-        <App />
-      )}
+        )}
+      </ErrorBoundary>
     </BrowserRouter>
   </StrictMode>,
 );

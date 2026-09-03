@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { confirmCheckoutSession, fetchOrderHistory, fetchProducts } from '../lib/shopApi';
 import { mapApiOrderToUiOrder, mapProductToGrocery } from '../lib/mapProduct';
 import { getStoredToken } from '../lib/authApi';
+import { AuthApiError } from '../lib/authValidation';
 import type { GroceryItem, Order } from '../types';
 
 type Props = {
@@ -22,7 +23,7 @@ export default function PaymentSuccessPage({
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = params.get('session_id') || '';
-  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ok'>('loading');
   const [message, setMessage] = useState('Confirming your payment…');
 
   useEffect(() => {
@@ -30,13 +31,17 @@ export default function PaymentSuccessPage({
 
     (async () => {
       if (!sessionId) {
-        setStatus('error');
-        setMessage('Missing Stripe session. Return to the shop and try again.');
+        navigate('/payment/failed?reason=' + encodeURIComponent('Missing Stripe session.'), {
+          replace: true,
+        });
         return;
       }
       if (!getStoredToken()) {
-        setStatus('error');
-        setMessage('Please sign in, then open this page again or check Orders.');
+        navigate(
+          '/error/session?reason=' +
+            encodeURIComponent('Sign in to confirm your payment, then check Orders.'),
+          { replace: true },
+        );
         return;
       }
 
@@ -56,10 +61,20 @@ export default function PaymentSuccessPage({
         onAddToast('Payment successful', 'Thank you — your Aura Fresh order is confirmed.', 'success');
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof AuthApiError && err.status === 401) {
+          navigate('/error/session', { replace: true });
+          return;
+        }
+        if (err instanceof AuthApiError && err.status >= 500) {
+          navigate(
+            '/500?reason=' + encodeURIComponent(err.message || 'Server error'),
+            { replace: true },
+          );
+          return;
+        }
         const errMsg = err instanceof Error ? err.message : 'Could not confirm payment.';
-        setStatus('error');
-        setMessage(errMsg);
         onAddToast('Payment confirm failed', errMsg, 'warning');
+        navigate('/payment/failed?reason=' + encodeURIComponent(errMsg), { replace: true });
       }
     })();
 
@@ -70,26 +85,25 @@ export default function PaymentSuccessPage({
   }, [sessionId]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0F0F0F] text-slate-800 dark:text-slate-200 grid place-items-center px-4">
-      <div className="max-w-md w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] p-8 text-center shadow-sm">
+    <div className="min-h-screen bg-[#eef4ef] dark:bg-[#0c1410] text-[#1a2e24] dark:text-[#e7efe9] grid place-items-center px-4">
+      <div className="max-w-md w-full rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/90 dark:bg-[#121a16] p-8 text-center shadow-market">
         {status === 'loading' && (
-          <Loader2 className="w-10 h-10 mx-auto text-emerald-500 animate-spin" />
+          <Loader2 className="w-10 h-10 mx-auto text-[#40916c] animate-spin" />
         )}
-        {status === 'ok' && <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />}
-        {status === 'error' && <XCircle className="w-10 h-10 mx-auto text-red-500" />}
-        <h1 className="mt-4 font-display text-xl font-black">
-          {status === 'loading' ? 'Confirming…' : status === 'ok' ? 'Order confirmed' : 'Something went wrong'}
+        {status === 'ok' && <CheckCircle2 className="w-10 h-10 mx-auto text-[#2d6a4f]" />}
+        <h1 className="mt-4 font-display text-xl font-semibold">
+          {status === 'loading' ? 'Confirming…' : 'Order confirmed'}
         </h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{message}</p>
+        <p className="mt-2 text-sm text-[#5c6f66] dark:text-[#8a9e94]">{message}</p>
         <div className="mt-6 flex flex-col gap-2">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="rounded-xl bg-emerald-500 text-black font-bold py-2.5 cursor-pointer"
+            className="rounded-2xl bg-[#2d6a4f] text-white font-semibold py-2.5 cursor-pointer hover:bg-[#40916c]"
           >
             Back to shop
           </button>
-          <Link to="/" className="text-sm text-slate-500 hover:text-emerald-600">
+          <Link to="/" className="text-sm text-[#5c6f66] hover:text-[#2d6a4f]">
             Continue browsing
           </Link>
         </div>

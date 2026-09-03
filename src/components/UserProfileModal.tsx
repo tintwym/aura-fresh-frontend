@@ -3,7 +3,7 @@ import {
   X, User, MapPin, CreditCard, Shield, Gift, Download, Trash2, CheckCircle2,
   Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight
 } from 'lucide-react';
-import { UserProfile, DeliveryAddress, PaymentMethod, Order } from '../types';
+import { UserProfile, PaymentMethod, Order } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BarChart,
@@ -21,6 +21,13 @@ import {
   parseExpiry,
   formatExpiryDisplay,
 } from '../lib/cardValidation';
+import {
+  validateDeliveryAddress,
+  hasAddressErrors,
+  toDeliveryAddress,
+  validateWalletAccount,
+  type AddressFieldErrors,
+} from '../lib/profileValidation';
 
 interface SpendTooltipProps {
   active?: boolean;
@@ -159,6 +166,8 @@ export default function UserProfileModal({
     zone: 'Yankin' as any
   });
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [addressFieldErrors, setAddressFieldErrors] = useState<AddressFieldErrors>({});
+  const [walletFieldErrors, setWalletFieldErrors] = useState<{ holder?: string; account?: string }>({});
 
   // Payment add state — CVV is held only while the form is open, never saved
   const [newPayment, setNewPayment] = useState({
@@ -203,26 +212,46 @@ export default function UserProfileModal({
 
   const handleAddAddress = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAddress.name || !newAddress.addressLine || !newAddress.phone) {
-      onAddToast('Incomplete Fields', 'Please fill out all required fields.', 'warning');
+    const errors = validateDeliveryAddress({
+      name: newAddress.name,
+      addressLine: newAddress.addressLine,
+      phone: newAddress.phone,
+      zipCode: newAddress.zipCode,
+      zone: newAddress.zone,
+    });
+    setAddressFieldErrors(errors);
+    if (hasAddressErrors(errors)) {
+      const first =
+        errors.name || errors.addressLine || errors.phone || errors.zipCode || errors.zone ||
+        'Please fix the highlighted fields.';
+      onAddToast('Check address', first, 'warning');
       return;
     }
-    const created: DeliveryAddress = {
-      id: 'addr_' + Date.now(),
-      name: newAddress.name,
-      addressLine: newAddress.addressLine + ` (${newAddress.zone})`,
-      city: newAddress.city,
-      state: newAddress.state,
-      zipCode: newAddress.zipCode || '11201',
-      phone: newAddress.phone,
-      isDefault: profile.addresses.length === 0
-    };
+
+    const created = toDeliveryAddress(
+      {
+        ...newAddress,
+        city: newAddress.city || 'Yangon',
+        state: newAddress.state || 'Yangon Region',
+      },
+      'addr_' + Date.now(),
+      profile.addresses.length === 0,
+    );
 
     onUpdateProfile({
       ...profile,
-      addresses: [...profile.addresses, created]
+      addresses: [...profile.addresses, created],
     });
-    setNewAddress({ name: '', addressLine: '', city: 'Yangon', state: 'Yangon Region', zipCode: '', phone: '', zone: 'Yankin' });
+    setNewAddress({
+      name: '',
+      addressLine: '',
+      city: 'Yangon',
+      state: 'Yangon Region',
+      zipCode: '',
+      phone: '',
+      zone: 'Yankin',
+    });
+    setAddressFieldErrors({});
     setShowAddAddress(false);
     onAddToast('Address Saved', 'Preferred delivery address added.', 'success');
   };
@@ -249,6 +278,7 @@ export default function UserProfileModal({
   const resetPaymentForm = () => {
     setNewPayment({ type: 'kbzpay', accountName: '', accountNumber: '', expiry: '', cvv: '' });
     setPaymentFieldErrors({});
+    setWalletFieldErrors({});
     setShowAddPayment(false);
   };
 
@@ -300,9 +330,18 @@ export default function UserProfileModal({
       return;
     }
 
-    const phone = newPayment.accountNumber.replace(/\D/g, '');
-    if (phone.length < 8) {
-      onAddToast('Invalid phone', 'Enter a valid wallet phone number.', 'warning');
+    const walletErrors = validateWalletAccount(
+      newPayment.type,
+      newPayment.accountName,
+      newPayment.accountNumber,
+    );
+    setWalletFieldErrors(walletErrors);
+    if (walletErrors.holder || walletErrors.account) {
+      onAddToast(
+        'Check wallet details',
+        walletErrors.account || walletErrors.holder || 'Invalid details.',
+        'warning',
+      );
       return;
     }
 
@@ -822,23 +861,33 @@ export default function UserProfileModal({
                             type="text"
                             placeholder="Home"
                             value={newAddress.name}
-                            onChange={e => setNewAddress({ ...newAddress, name: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewAddress({ ...newAddress, name: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              addressFieldErrors.name ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                             required
                           />
+                          {addressFieldErrors.name && (
+                            <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.name}</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Delivery Zone</label>
                           <select
                             value={newAddress.zone}
-                            onChange={e => setNewAddress({ ...newAddress, zone: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewAddress({ ...newAddress, zone: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              addressFieldErrors.zone ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                           >
                             <option value="Downtown Yangon">Downtown Yangon</option>
                             <option value="Yankin">Yankin</option>
                             <option value="Bahan">Bahan</option>
                             <option value="Hlaing">Hlaing</option>
                           </select>
+                          {addressFieldErrors.zone && (
+                            <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.zone}</p>
+                          )}
                         </div>
                         <div className="sm:col-span-2">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Street Address</label>
@@ -846,10 +895,15 @@ export default function UserProfileModal({
                             type="text"
                             placeholder="No. 45, Golden Valley Road"
                             value={newAddress.addressLine}
-                            onChange={e => setNewAddress({ ...newAddress, addressLine: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewAddress({ ...newAddress, addressLine: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              addressFieldErrors.addressLine ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                             required
                           />
+                          {addressFieldErrors.addressLine && (
+                            <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.addressLine}</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Recipient Phone</label>
@@ -857,10 +911,15 @@ export default function UserProfileModal({
                             type="tel"
                             placeholder="09971234567"
                             value={newAddress.phone}
-                            onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              addressFieldErrors.phone ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                             required
                           />
+                          {addressFieldErrors.phone && (
+                            <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.phone}</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Zip Code (Optional)</label>
@@ -868,15 +927,23 @@ export default function UserProfileModal({
                             type="text"
                             placeholder="11201"
                             value={newAddress.zipCode}
-                            onChange={e => setNewAddress({ ...newAddress, zipCode: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewAddress({ ...newAddress, zipCode: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              addressFieldErrors.zipCode ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                           />
+                          {addressFieldErrors.zipCode && (
+                            <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.zipCode}</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex justify-end gap-2 pt-2">
                         <button
                           type="button"
-                          onClick={() => setShowAddAddress(false)}
+                          onClick={() => {
+                            setShowAddAddress(false);
+                            setAddressFieldErrors({});
+                          }}
                           className="px-3 py-1.5 border border-slate-200 dark:border-[#1c1c1c] text-slate-500 text-xs rounded-md"
                         >
                           Cancel
@@ -1010,13 +1077,17 @@ export default function UserProfileModal({
                             value={newPayment.accountName}
                             onChange={(e) => setNewPayment({ ...newPayment, accountName: e.target.value })}
                             className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
-                              paymentFieldErrors.holder ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                              paymentFieldErrors.holder || walletFieldErrors.holder
+                                ? 'border-red-400'
+                                : 'border-slate-200 dark:border-white/10'
                             }`}
                             required
                             autoComplete="cc-name"
                           />
-                          {paymentFieldErrors.holder && (
-                            <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.holder}</p>
+                          {(paymentFieldErrors.holder || walletFieldErrors.holder) && (
+                            <p className="text-[10px] text-red-500 mt-1">
+                              {paymentFieldErrors.holder || walletFieldErrors.holder}
+                            </p>
                           )}
                         </div>
                         <div>
@@ -1039,13 +1110,17 @@ export default function UserProfileModal({
                               });
                             }}
                             className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden font-mono ${
-                              paymentFieldErrors.cardNumber ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                              paymentFieldErrors.cardNumber || walletFieldErrors.account
+                                ? 'border-red-400'
+                                : 'border-slate-200 dark:border-white/10'
                             }`}
                             required
                             autoComplete={newPayment.type === 'mpu' ? 'cc-number' : 'tel'}
                           />
-                          {paymentFieldErrors.cardNumber && (
-                            <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.cardNumber}</p>
+                          {(paymentFieldErrors.cardNumber || walletFieldErrors.account) && (
+                            <p className="text-[10px] text-red-500 mt-1">
+                              {paymentFieldErrors.cardNumber || walletFieldErrors.account}
+                            </p>
                           )}
                         </div>
                       </div>

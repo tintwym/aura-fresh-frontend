@@ -57,7 +57,7 @@ export default function CartAndCheckout({
     state: 'Yangon Region',
     zipCode: '',
     phone: '',
-    zone: 'Yankin' as const
+    zone: 'Yankin' as DeliveryZone,
   });
 
   // Secure processing animation state
@@ -549,7 +549,7 @@ export default function CartAndCheckout({
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">Availability Zone</label>
                       <select
                         value={manualAddress.zone}
-                        onChange={e => setManualAddress({ ...manualAddress, zone: e.target.value })}
+                        onChange={e => setManualAddress({ ...manualAddress, zone: e.target.value as DeliveryZone })}
                         className="w-full px-3 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md"
                       >
                         <option value="Downtown Yangon">Downtown Yangon — {deliveryFeeFor('Downtown Yangon', 0).toLocaleString()} Ks</option>
