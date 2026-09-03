@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, User, MapPin, CreditCard, Shield, Gift, Download, Trash2, CheckCircle2,
-  Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight
+  Lock, AlertCircle, BarChart3, Package, Clock, ShoppingBag, XCircle, Truck, ChevronRight, LogOut
 } from 'lucide-react';
 import { UserProfile, PaymentMethod, Order } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -431,14 +431,30 @@ export default function UserProfileModal({
               </p>
             </div>
           </div>
-          <button
-            id="close-profile-modal"
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#161616] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors shrink-0"
-            aria-label="Close user profile modal"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSignOut();
+                  onClose();
+                }}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 border border-red-500/20 cursor-pointer transition-colors"
+                aria-label="Log out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Log out
+              </button>
+            )}
+            <button
+              id="close-profile-modal"
+              onClick={onClose}
+              className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#161616] text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors shrink-0"
+              aria-label="Close user profile modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content body split */}
@@ -549,10 +565,14 @@ export default function UserProfileModal({
                     {onSignOut && (
                       <button
                         type="button"
-                        onClick={onSignOut}
-                        className="px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg cursor-pointer transition-colors"
+                        onClick={() => {
+                          onSignOut();
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg cursor-pointer transition-colors border border-red-500/20"
                       >
-                        Sign out
+                        <LogOut className="w-4 h-4" />
+                        Log out
                       </button>
                     )}
                     <button
