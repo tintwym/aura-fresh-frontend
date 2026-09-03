@@ -133,12 +133,12 @@ export default function VoiceSearchModal({
       );
     } else if (result.item) {
       if (onApplySearchFilter) {
-        onApplySearchFilter(result.item.name);
+        onApplySearchFilter(result.searchTerm || result.item.name);
       }
       onAddToast('🎤 Item Found', `Matching item: ${result.item.name}`, 'info');
     } else {
       if (onApplySearchFilter) {
-        onApplySearchFilter(text);
+        onApplySearchFilter(result.searchTerm || text);
       }
       onAddToast('🎤 Voice Search', `Searching catalog for "${text}"`, 'info');
     }

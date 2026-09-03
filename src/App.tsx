@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
-  Bell, ShoppingCart, Moon, Sun, MapPin, Search,
+  Bell, ShoppingCart, Moon, Sun, MapPin,
   Home, Truck, Mic, FileText, LogIn, Monitor, ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,6 +23,7 @@ import VoiceSearchModal from './components/VoiceSearchModal';
 import OrderCelebrationModal from './components/OrderCelebrationModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
 import UserMenuDropdown from './components/UserMenuDropdown';
+import NavbarSearchField from './components/NavbarSearchField';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
 import StatusPage, {
   NotFoundPage,
@@ -91,6 +92,7 @@ export default function App() {
   const isDarkMode = themePref === 'system' ? systemDark : themePref === 'dark';
 
   const [selectedZone, setSelectedZone] = useState('All Zones');
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [gdprBannerAccepted, setGdprBannerAccepted] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('aura-fresh-gdpr-consent') === '1';
@@ -387,6 +389,14 @@ export default function App() {
     setProfile(createEmptyProfile());
     handleAddToast('Logged out', 'Come back anytime for fresh groceries.', 'info');
   };
+
+  const scrollToCatalogSearch = useCallback(() => {
+    const el = document.getElementById('catalog-section');
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight * 0.55 && rect.bottom > 80) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const handleAddNotification = (
     title: string,
@@ -707,24 +717,15 @@ export default function App() {
             </div>
           </a>
 
-          {/* Spacer keeps logo left / actions right on wide screens */}
-          <div className="flex-1 min-w-2" aria-hidden />
+          <NavbarSearchField
+            value={catalogSearchQuery}
+            onChange={setCatalogSearchQuery}
+            onAddToast={handleAddToast}
+            onActivate={scrollToCatalogSearch}
+          />
 
           {/* Nav Actions - Desktop & Mobile */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
-                window.setTimeout(() => document.getElementById('grocery-search')?.focus(), 450);
-              }}
-              className="p-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/70 dark:bg-[#121a16] hover:bg-white dark:hover:bg-[#1a2420] text-[#5c6f66] dark:text-[#8a9e94] cursor-pointer transition-colors"
-              aria-label="Search the market"
-              title="Search"
-            >
-              <Search className="w-4.5 h-4.5" />
-            </button>
-
             {/* Theme toggle — cycles System (auto) → Light → Dark */}
             <button
               onClick={toggleTheme}
@@ -774,6 +775,7 @@ export default function App() {
             <UserMenuDropdown
               isSignedIn={isSignedIn}
               profile={profile}
+              toggleId="header-profile-menu"
               onSignIn={() => setIsAuthOpen(true)}
               onOpenProfile={() => setIsProfileOpen(true)}
               onOpenOrders={() => setIsOrderDetailsOpen(true)}
@@ -886,6 +888,7 @@ export default function App() {
           onAddToCart={handleAddToCart}
           selectedZone={selectedZone}
           setSelectedZone={setSelectedZone}
+          searchQuery={catalogSearchQuery}
           onAddToast={handleAddToast}
         />
         <SmartRecipes
@@ -1024,6 +1027,11 @@ export default function App() {
         groceries={groceries}
         onAddToCart={handleAddToCart}
         onAddToast={handleAddToast}
+        onApplySearchFilter={(query) => {
+          setCatalogSearchQuery(query);
+          setIsVoiceModalOpen(false);
+          window.setTimeout(() => scrollToCatalogSearch(), 100);
+        }}
       />
 
       {/* Order Celebration Animation Modal */}
@@ -1156,7 +1164,8 @@ export default function App() {
               profile={profile}
               compact
               dropUp
-              className="[&_button#profile-toggle-btn]:border-0 [&_button#profile-toggle-btn]:bg-transparent [&_button#profile-toggle-btn]:p-0.5"
+              toggleId="mobile-profile-menu"
+              className="[&_button]:border-0 [&_button]:bg-transparent [&_button]:p-0.5"
               onSignIn={() => setIsAuthOpen(true)}
               onOpenProfile={() => setIsProfileOpen(true)}
               onOpenOrders={() => setIsOrderDetailsOpen(true)}

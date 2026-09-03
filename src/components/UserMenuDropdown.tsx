@@ -14,6 +14,8 @@ type Props = {
   compact?: boolean;
   /** Open menu upward (mobile bottom bar) */
   dropUp?: boolean;
+  /** Unique id for the toggle button (avoid duplicates when both header + mobile mount) */
+  toggleId?: string;
   className?: string;
 };
 
@@ -26,6 +28,7 @@ export default function UserMenuDropdown({
   onSignOut,
   compact = false,
   dropUp = false,
+  toggleId = 'profile-menu-toggle',
   className = '',
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -52,7 +55,7 @@ export default function UserMenuDropdown({
   if (!isSignedIn) {
     return (
       <button
-        id="profile-toggle-btn"
+        id={toggleId}
         type="button"
         onClick={onSignIn}
         className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-[#2d6a4f]/25 bg-white/80 dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] text-xs font-semibold hover:bg-white dark:hover:bg-[#1a2420] transition-colors cursor-pointer ${className}`}
@@ -69,7 +72,7 @@ export default function UserMenuDropdown({
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <button
-        id="profile-toggle-btn"
+        id={toggleId}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}

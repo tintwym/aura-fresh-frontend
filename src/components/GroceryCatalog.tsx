@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  Search, ShoppingCart, MapPin, Mic, WifiOff, Loader2, RefreshCw, Star,
+  ShoppingCart, MapPin, WifiOff, Loader2, RefreshCw, Star,
 } from 'lucide-react';
 import { GroceryItem, DietaryRestriction } from '../types';
 import { DIETARY_OPTIONS, ZONE_OPTIONS } from '../data/groceries';
@@ -15,55 +15,8 @@ interface GroceryCatalogProps {
   onAddToCart: (item: GroceryItem, qty: number, isSub: boolean, freq?: 'weekly' | 'biweekly' | 'monthly') => void;
   selectedZone: string;
   setSelectedZone: (zone: string) => void;
+  searchQuery: string;
   onAddToast: (title: string, msg: string, type: 'success' | 'warning' | 'info') => void;
-}
-
-export interface BestValueInfo {
-  unitPrice: number;
-  label: string;
-  unitType: 'mass' | 'volume' | 'count';
-}
-
-export function calculateUnitPrice(price: number, unitStr: string): BestValueInfo {
-  const lower = unitStr.toLowerCase().trim();
-
-  const kgMatch = lower.match(/^([\d.]+)\s*kg$/);
-  if (kgMatch) {
-    const kg = parseFloat(kgMatch[1]);
-    if (kg > 0) {
-      const perKg = Math.round(price / kg);
-      return { unitPrice: perKg, label: `${perKg.toLocaleString()} MMK/kg`, unitType: 'mass' };
-    }
-  }
-
-  const gMatch = lower.match(/^([\d.]+)\s*g$/);
-  if (gMatch) {
-    const g = parseFloat(gMatch[1]);
-    if (g > 0) {
-      const perKg = Math.round(price / (g / 1000));
-      return { unitPrice: perKg, label: `${perKg.toLocaleString()} MMK/kg`, unitType: 'mass' };
-    }
-  }
-
-  const literMatch = lower.match(/^([\d.]+)\s*(liter|l)$/);
-  if (literMatch) {
-    const l = parseFloat(literMatch[1]);
-    if (l > 0) {
-      const perL = Math.round(price / l);
-      return { unitPrice: perL, label: `${perL.toLocaleString()} MMK/L`, unitType: 'volume' };
-    }
-  }
-
-  const mlMatch = lower.match(/^([\d.]+)\s*ml$/);
-  if (mlMatch) {
-    const ml = parseFloat(mlMatch[1]);
-    if (ml > 0) {
-      const perL = Math.round(price / (ml / 1000));
-      return { unitPrice: perL, label: `${perL.toLocaleString()} MMK/L`, unitType: 'volume' };
-    }
-  }
-
-  return { unitPrice: price, label: `${price.toLocaleString()} MMK/unit`, unitType: 'count' };
 }
 
 export default function GroceryCatalog({
@@ -74,13 +27,11 @@ export default function GroceryCatalog({
   onAddToCart,
   selectedZone,
   setSelectedZone,
+  searchQuery,
   onAddToast,
 }: GroceryCatalogProps) {
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedDietary, setSelectedDietary] = useState<DietaryRestriction[]>([]);
   const [quantities, setQuantities] = useState<{ [itemId: string]: number }>({});
-  const [isListening, setIsListening] = useState(false);
-  const [recognition, setRecognition] = useState<{ start: () => void; stop: () => void; abort: () => void } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -105,62 +56,6 @@ export default function GroceryCatalog({
       window.removeEventListener('offline', handleOffline);
     };
   }, [onAddToast]);
-
-  useEffect(() => {
-    const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) return;
-
-    const rec = new SpeechRecognitionCtor();
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.lang = 'en-US';
-
-    rec.onstart = () => {
-      setIsListening(true);
-      onAddToast('Listening…', 'Say a product name.', 'info');
-    };
-    rec.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setSearchQuery(transcript);
-      onAddToast('Voice search', `Looking for “${transcript}”`, 'success');
-    };
-    rec.onerror = (event: any) => {
-      if (event.error === 'not-allowed') {
-        onAddToast('Microphone blocked', 'Allow mic access to use voice search.', 'warning');
-      } else if (event.error !== 'aborted') {
-        onAddToast('Voice search', `Could not hear you (${event.error}).`, 'warning');
-      }
-      setIsListening(false);
-    };
-    rec.onend = () => setIsListening(false);
-
-    setRecognition(rec);
-    return () => {
-      try {
-        rec.abort();
-      } catch {
-        /* ignore */
-      }
-      setRecognition(null);
-    };
-  }, [onAddToast]);
-
-  const handleToggleSpeech = () => {
-    if (!recognition) {
-      onAddToast('Not supported', 'Voice search needs Chrome or Safari.', 'warning');
-      return;
-    }
-    if (isListening) {
-      recognition.stop();
-    } else {
-      try {
-        recognition.start();
-      } catch {
-        /* ignore */
-      }
-    }
-  };
 
   const toggleDietary = (restriction: DietaryRestriction) => {
     setSelectedDietary((prev) =>
@@ -244,6 +139,7 @@ export default function GroceryCatalog({
         </div>
         <p className="text-xs font-medium text-[#5c6f66] dark:text-[#8a9e94]">
           {filteredGroceries.length} item{filteredGroceries.length === 1 ? '' : 's'}
+          {searchQuery.trim() ? ` · “${searchQuery.trim()}”` : ''}
         </p>
       </div>
 
@@ -263,115 +159,76 @@ export default function GroceryCatalog({
         )}
       </AnimatePresence>
 
-      {/* Search + zone */}
-      <div className="sticky top-16 z-30 -mx-4 px-4 py-3 bg-[#eef4ef]/90 dark:bg-[#0c1410]/90 backdrop-blur-md border-b border-[#2d6a4f]/10 dark:border-white/5">
-        <div className="flex flex-col md:flex-row gap-3 max-w-7xl mx-auto">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-[#5c6f66]/70 pointer-events-none" />
-            <input
-              id="grocery-search"
-              type="search"
-              autoComplete="off"
-              placeholder="Search produce, rice, tofu…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-20 py-3 border border-[#2d6a4f]/15 dark:border-white/10 bg-white dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] rounded-2xl text-sm placeholder:text-[#5c6f66]/55 focus:outline-hidden focus:ring-2 focus:ring-[#40916c]/35 transition-shadow shadow-sm"
-            />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-              {searchQuery && (
+      {/* Zone + diet — catalog filters only */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/80 dark:bg-[#121a16] text-sm text-[#1a2e24] dark:text-[#e7efe9]">
+            <MapPin className="w-4 h-4 text-[#40916c] shrink-0" />
+            <select
+              id="zone-select"
+              value={selectedZone}
+              onChange={(e) => setSelectedZone(e.target.value)}
+              className="bg-transparent font-medium focus:outline-hidden cursor-pointer min-w-0"
+            >
+              {ZONE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`px-3 py-2 rounded-2xl text-sm font-medium border transition-colors cursor-pointer ${
+              showFilters || selectedDietary.length > 0
+                ? 'bg-[#2d6a4f] text-white border-[#2d6a4f]'
+                : 'bg-white/80 dark:bg-[#121a16] border-[#2d6a4f]/15 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9]'
+            }`}
+          >
+            Diet{selectedDietary.length > 0 ? ` · ${selectedDietary.length}` : ''}
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="flex flex-wrap gap-2"
+            >
+              {DIETARY_OPTIONS.map((diet) => {
+                const active = selectedDietary.includes(diet.value as DietaryRestriction);
+                return (
+                  <button
+                    key={diet.value}
+                    type="button"
+                    onClick={() => toggleDietary(diet.value as DietaryRestriction)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-[#d8f3dc] text-[#1b4332] dark:bg-[#1b4332] dark:text-[#d8f3dc]'
+                        : 'bg-white/60 dark:bg-[#121a16] text-[#5c6f66] dark:text-[#8a9e94] hover:bg-[#d8f3dc]/50'
+                    }`}
+                  >
+                    {diet.name}
+                  </button>
+                );
+              })}
+              {selectedDietary.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="px-2 py-1 text-[11px] font-medium text-[#5c6f66] hover:text-[#1a2e24] dark:hover:text-white rounded-lg"
+                  onClick={() => setSelectedDietary([])}
+                  className="px-3 py-1.5 text-xs font-medium text-[#c45c26] cursor-pointer"
                 >
                   Clear
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleToggleSpeech}
-                className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                  isListening
-                    ? 'bg-red-500/15 text-red-600'
-                    : 'text-[#5c6f66] hover:text-[#2d6a4f] hover:bg-[#d8f3dc]/60'
-                }`}
-                title={isListening ? 'Stop' : 'Voice search'}
-                aria-label={isListening ? 'Stop voice search' : 'Voice search'}
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 px-3.5 py-3 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white dark:bg-[#121a16] text-sm text-[#1a2e24] dark:text-[#e7efe9]">
-              <MapPin className="w-4 h-4 text-[#40916c] shrink-0" />
-              <select
-                id="zone-select"
-                value={selectedZone}
-                onChange={(e) => setSelectedZone(e.target.value)}
-                className="bg-transparent font-medium focus:outline-hidden cursor-pointer min-w-0"
-              >
-                {ZONE_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setShowFilters((v) => !v)}
-              className={`px-3.5 py-3 rounded-2xl text-sm font-medium border transition-colors cursor-pointer ${
-                showFilters || selectedDietary.length > 0
-                  ? 'bg-[#2d6a4f] text-white border-[#2d6a4f]'
-                  : 'bg-white dark:bg-[#121a16] border-[#2d6a4f]/15 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9]'
-              }`}
-            >
-              Diet{selectedDietary.length > 0 ? ` · ${selectedDietary.length}` : ''}
-            </button>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-
-      <AnimatePresence>
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="flex flex-wrap gap-2"
-          >
-            {DIETARY_OPTIONS.map((diet) => {
-              const active = selectedDietary.includes(diet.value as DietaryRestriction);
-              return (
-                <button
-                  key={diet.value}
-                  type="button"
-                  onClick={() => toggleDietary(diet.value as DietaryRestriction)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-[#d8f3dc] text-[#1b4332] dark:bg-[#1b4332] dark:text-[#d8f3dc]'
-                      : 'bg-white/60 dark:bg-[#121a16] text-[#5c6f66] dark:text-[#8a9e94] hover:bg-[#d8f3dc]/50'
-                  }`}
-                >
-                  {diet.name}
-                </button>
-              );
-            })}
-            {selectedDietary.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedDietary([])}
-                className="px-3 py-1.5 text-xs font-medium text-[#c45c26] cursor-pointer"
-              >
-                Clear
-              </button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {filteredGroceries.length === 0 ? (
         <div className="py-16 text-center">
