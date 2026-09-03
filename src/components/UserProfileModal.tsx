@@ -16,6 +16,11 @@ import {
   Cell
 } from 'recharts';
 import { validateEmail, validateFullName } from '../lib/authValidation';
+import {
+  validateDebitCard,
+  parseExpiry,
+  formatExpiryDisplay,
+} from '../lib/cardValidation';
 
 interface SpendTooltipProps {
   active?: boolean;
@@ -155,12 +160,20 @@ export default function UserProfileModal({
   });
   const [showAddAddress, setShowAddAddress] = useState(false);
 
-  // Payment add state
+  // Payment add state — CVV is held only while the form is open, never saved
   const [newPayment, setNewPayment] = useState({
-    type: 'kbzpay' as any,
+    type: 'kbzpay' as PaymentMethod['type'],
     accountName: '',
-    accountNumber: ''
+    accountNumber: '',
+    expiry: '',
+    cvv: '',
   });
+  const [paymentFieldErrors, setPaymentFieldErrors] = useState<{
+    cardNumber?: string;
+    expiry?: string;
+    cvv?: string;
+    holder?: string;
+  }>({});
   const [showAddPayment, setShowAddPayment] = useState(false);
 
   if (!isOpen) return null;
@@ -233,30 +246,80 @@ export default function UserProfileModal({
     onAddToast('Default Updated', 'New default delivery address set.', 'success');
   };
 
+  const resetPaymentForm = () => {
+    setNewPayment({ type: 'kbzpay', accountName: '', accountNumber: '', expiry: '', cvv: '' });
+    setPaymentFieldErrors({});
+    setShowAddPayment(false);
+  };
+
   const handleAddPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPayment.accountName || !newPayment.accountNumber) {
-      onAddToast('Incomplete Fields', 'Please enter account holder name and details.', 'warning');
+
+    if (newPayment.type === 'mpu') {
+      const result = validateDebitCard({
+        holderName: newPayment.accountName,
+        cardNumber: newPayment.accountNumber,
+        expiry: newPayment.expiry,
+        cvv: newPayment.cvv,
+      });
+      setPaymentFieldErrors(result.errors);
+      if (!result.ok) {
+        const firstMsg =
+          result.errors.cardNumber ||
+          result.errors.expiry ||
+          result.errors.cvv ||
+          result.errors.holder ||
+          'Check card details.';
+        onAddToast('Card not verified', firstMsg, 'warning');
+        return;
+      }
+
+      const expiry = parseExpiry(newPayment.expiry)!;
+      const pan = newPayment.accountNumber.replace(/\D/g, '');
+      const created: PaymentMethod = {
+        id: 'pay_' + Date.now(),
+        type: 'mpu',
+        accountName: newPayment.accountName.trim(),
+        accountNumber: pan.slice(-4),
+        maskedCardNumber: `•••• •••• •••• ${pan.slice(-4)}`,
+        cardExpiry: formatExpiryDisplay(expiry.month, expiry.year),
+        isDefault: profile.paymentMethods.length === 0,
+      };
+
+      onUpdateProfile({
+        ...profile,
+        paymentMethods: [...profile.paymentMethods, created],
+      });
+      resetPaymentForm();
+      onAddToast('Card saved', 'Debit card verified. CVV was not stored.', 'success');
       return;
     }
+
+    if (!newPayment.accountName.trim() || !newPayment.accountNumber.trim()) {
+      onAddToast('Incomplete fields', 'Enter account holder name and phone number.', 'warning');
+      return;
+    }
+
+    const phone = newPayment.accountNumber.replace(/\D/g, '');
+    if (phone.length < 8) {
+      onAddToast('Invalid phone', 'Enter a valid wallet phone number.', 'warning');
+      return;
+    }
+
     const created: PaymentMethod = {
       id: 'pay_' + Date.now(),
       type: newPayment.type,
-      accountName: newPayment.accountName,
-      accountNumber: newPayment.accountNumber,
+      accountName: newPayment.accountName.trim(),
+      accountNumber: newPayment.accountNumber.trim(),
       isDefault: profile.paymentMethods.length === 0,
-      maskedCardNumber: newPayment.type === 'mpu'
-        ? `•••• •••• •••• ${newPayment.accountNumber.slice(-4)}`
-        : undefined
     };
 
     onUpdateProfile({
       ...profile,
-      paymentMethods: [...profile.paymentMethods, created]
+      paymentMethods: [...profile.paymentMethods, created],
     });
-    setNewPayment({ type: 'kbzpay', accountName: '', accountNumber: '' });
-    setShowAddPayment(false);
-    onAddToast('Payment Method Saved', 'Payment configuration linked successfully.', 'success');
+    resetPaymentForm();
+    onAddToast('Payment method saved', 'Wallet linked successfully.', 'success');
   };
 
   const handleDeletePayment = (id: string) => {
@@ -921,7 +984,15 @@ export default function UserProfileModal({
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Provider Type</label>
                           <select
                             value={newPayment.type}
-                            onChange={e => setNewPayment({ ...newPayment, type: e.target.value })}
+                            onChange={(e) => {
+                              setPaymentFieldErrors({});
+                              setNewPayment({
+                                ...newPayment,
+                                type: e.target.value as PaymentMethod['type'],
+                                expiry: '',
+                                cvv: '',
+                              });
+                            }}
                             className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
                           >
                             <option value="kbzpay">KBZPay Wallet</option>
@@ -937,29 +1008,106 @@ export default function UserProfileModal({
                             type="text"
                             placeholder="Kyaw Kyaw"
                             value={newPayment.accountName}
-                            onChange={e => setNewPayment({ ...newPayment, accountName: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => setNewPayment({ ...newPayment, accountName: e.target.value })}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                              paymentFieldErrors.holder ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                             required
+                            autoComplete="cc-name"
                           />
+                          {paymentFieldErrors.holder && (
+                            <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.holder}</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                            {newPayment.type === 'mpu' ? 'Card Number (16 digits)' : 'Associated Phone Number'}
+                            {newPayment.type === 'mpu' ? 'Card Number' : 'Associated Phone Number'}
                           </label>
                           <input
                             type="text"
-                            placeholder={newPayment.type === 'mpu' ? '1234567812345678' : '09971234567'}
+                            inputMode="numeric"
+                            placeholder={newPayment.type === 'mpu' ? '•••• •••• •••• ••••' : '09971234567'}
                             value={newPayment.accountNumber}
-                            onChange={e => setNewPayment({ ...newPayment, accountNumber: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setNewPayment({
+                                ...newPayment,
+                                accountNumber:
+                                  newPayment.type === 'mpu'
+                                    ? raw.replace(/[^\d\s]/g, '').slice(0, 23)
+                                    : raw,
+                              });
+                            }}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden font-mono ${
+                              paymentFieldErrors.cardNumber ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                            }`}
                             required
+                            autoComplete={newPayment.type === 'mpu' ? 'cc-number' : 'tel'}
                           />
+                          {paymentFieldErrors.cardNumber && (
+                            <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.cardNumber}</p>
+                          )}
                         </div>
                       </div>
+
+                      {newPayment.type === 'mpu' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">Expiry (MM/YY)</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="09/28"
+                              value={newPayment.expiry}
+                              onChange={(e) => {
+                                let v = e.target.value.replace(/[^\d/]/g, '').slice(0, 5);
+                                if (v.length === 2 && !newPayment.expiry.includes('/') && !v.includes('/')) {
+                                  v = `${v}/`;
+                                }
+                                setNewPayment({ ...newPayment, expiry: v });
+                              }}
+                              className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden font-mono ${
+                                paymentFieldErrors.expiry ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                              }`}
+                              required
+                              autoComplete="cc-exp"
+                            />
+                            {paymentFieldErrors.expiry && (
+                              <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.expiry}</p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase">CVV</label>
+                            <input
+                              type="password"
+                              inputMode="numeric"
+                              placeholder="•••"
+                              value={newPayment.cvv}
+                              onChange={(e) =>
+                                setNewPayment({
+                                  ...newPayment,
+                                  cvv: e.target.value.replace(/\D/g, '').slice(0, 4),
+                                })
+                              }
+                              className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden font-mono ${
+                                paymentFieldErrors.cvv ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
+                              }`}
+                              required
+                              autoComplete="cc-csc"
+                              maxLength={4}
+                            />
+                            {paymentFieldErrors.cvv && (
+                              <p className="text-[10px] text-red-500 mt-1">{paymentFieldErrors.cvv}</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1">Verified now — never stored.</p>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex justify-end gap-2 pt-2">
                         <button
                           type="button"
-                          onClick={() => setShowAddPayment(false)}
+                          onClick={resetPaymentForm}
                           className="px-3 py-1.5 border border-slate-200 dark:border-[#1c1c1c] text-slate-500 text-xs rounded-md"
                         >
                           Cancel
@@ -968,7 +1116,7 @@ export default function UserProfileModal({
                           type="submit"
                           className="px-3 py-1.5 bg-emerald-500 text-black text-xs font-extrabold rounded-md"
                         >
-                          Link Method
+                          {newPayment.type === 'mpu' ? 'Verify & Save' : 'Link Method'}
                         </button>
                       </div>
                     </motion.form>
@@ -1035,6 +1183,11 @@ export default function UserProfileModal({
                           <p className="font-mono text-sm text-slate-700 dark:text-slate-200 mt-1">
                             {pay.type === 'mpu' ? pay.maskedCardNumber : pay.accountNumber}
                           </p>
+                          {pay.type === 'mpu' && pay.cardExpiry && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              Exp {pay.cardExpiry}
+                            </p>
+                          )}
                         </div>
 
                         <div className="flex items-center justify-between border-t border-slate-100 dark:border-white/10 pt-3 mt-4">

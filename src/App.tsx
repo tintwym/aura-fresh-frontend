@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
-  Bell, ShoppingCart, Moon, Sun, MapPin,
+  Bell, ShoppingCart, Moon, Sun, MapPin, Search,
   Home, Truck, Mic, FileText, LogIn, Monitor, ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,7 +22,6 @@ import FeedbackModal from './components/FeedbackModal';
 import VoiceSearchModal from './components/VoiceSearchModal';
 import OrderCelebrationModal from './components/OrderCelebrationModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
-import NavbarSearch from './components/NavbarSearch';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
 import {
   createEmptyProfile,
@@ -566,26 +565,24 @@ export default function App() {
             </div>
           </a>
 
-          {/* Global Fuzzy Search Bar */}
-          <NavbarSearch
-            groceries={groceries}
-            onAddToCart={(item, qty) => handleAddToCart(item, qty, false)}
-            onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
-            onAddToast={handleAddToast}
-          />
+          {/* Spacer keeps logo left / actions right on wide screens */}
+          <div className="flex-1 min-w-2" aria-hidden />
 
           {/* Nav Actions - Desktop & Mobile */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Mobile Voice Mic Button */}
             <button
-              onClick={() => setIsVoiceModalOpen(true)}
-              className="flex sm:hidden p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors cursor-pointer"
-              title="Voice Search & Commands"
+              type="button"
+              onClick={() => {
+                document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                window.setTimeout(() => document.getElementById('grocery-search')?.focus(), 450);
+              }}
+              className="p-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/70 dark:bg-[#121a16] hover:bg-white dark:hover:bg-[#1a2420] text-[#5c6f66] dark:text-[#8a9e94] cursor-pointer transition-colors"
+              aria-label="Search the market"
+              title="Search"
             >
-              <Mic className="w-4 h-4 animate-pulse" />
+              <Search className="w-4.5 h-4.5" />
             </button>
 
-            {/* Order Details & Receipts Modal Toggle */}
             <button
               onClick={() => setIsOrderDetailsOpen(true)}
               className="p-2 sm:px-3 sm:py-1.5 bg-white/70 hover:bg-white dark:bg-[#121a16] dark:hover:bg-[#1a2420] border border-[#2d6a4f]/12 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9] font-semibold text-xs rounded-2xl flex items-center gap-1.5 cursor-pointer transition-colors"

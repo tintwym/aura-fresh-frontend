@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { GroceryItem, DietaryRestriction } from '../types';
 import { DIETARY_OPTIONS, ZONE_OPTIONS } from '../data/groceries';
+import { fuzzySearchGroceries } from '../utils/fuzzySearch';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface GroceryCatalogProps {
@@ -168,14 +169,12 @@ export default function GroceryCatalog({
   };
 
   const filteredGroceries = useMemo(() => {
-    return groceries.filter((item) => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch =
-        !q ||
-        item.name.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q);
+    const q = searchQuery.trim();
+    const bySearch = q
+      ? fuzzySearchGroceries(q, groceries)
+      : groceries;
 
+    return bySearch.filter((item) => {
       const matchesDietary =
         selectedDietary.length === 0 ||
         selectedDietary.every((r) => item.dietaryRestrictions.includes(r));
@@ -185,7 +184,7 @@ export default function GroceryCatalog({
         item.availabilityZone === 'All Zones' ||
         item.availabilityZone === selectedZone;
 
-      return matchesSearch && matchesDietary && matchesZone;
+      return matchesDietary && matchesZone;
     });
   }, [groceries, searchQuery, selectedDietary, selectedZone]);
 
@@ -264,60 +263,75 @@ export default function GroceryCatalog({
         )}
       </AnimatePresence>
 
-      {/* Search + zone — one quiet bar */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-[#5c6f66]/70" />
-          <input
-            id="grocery-search"
-            type="text"
-            placeholder="Search produce, rice, tofu…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-12 py-3 border border-[#2d6a4f]/15 dark:border-white/10 bg-white/80 dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] rounded-2xl text-sm placeholder:text-[#5c6f66]/60 focus:outline-hidden focus:ring-2 focus:ring-[#40916c]/40 transition-shadow"
-          />
-          <button
-            type="button"
-            onClick={handleToggleSpeech}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-colors cursor-pointer ${
-              isListening
-                ? 'bg-red-500/15 text-red-600'
-                : 'text-[#5c6f66] hover:text-[#2d6a4f] hover:bg-[#d8f3dc]/60'
-            }`}
-            title={isListening ? 'Stop' : 'Voice search'}
-          >
-            <Mic className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Search + zone */}
+      <div className="sticky top-16 z-30 -mx-4 px-4 py-3 bg-[#eef4ef]/90 dark:bg-[#0c1410]/90 backdrop-blur-md border-b border-[#2d6a4f]/10 dark:border-white/5">
+        <div className="flex flex-col md:flex-row gap-3 max-w-7xl mx-auto">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-[#5c6f66]/70 pointer-events-none" />
+            <input
+              id="grocery-search"
+              type="search"
+              autoComplete="off"
+              placeholder="Search produce, rice, tofu…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-11 pr-20 py-3 border border-[#2d6a4f]/15 dark:border-white/10 bg-white dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] rounded-2xl text-sm placeholder:text-[#5c6f66]/55 focus:outline-hidden focus:ring-2 focus:ring-[#40916c]/35 transition-shadow shadow-sm"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-2 py-1 text-[11px] font-medium text-[#5c6f66] hover:text-[#1a2e24] dark:hover:text-white rounded-lg"
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleToggleSpeech}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                  isListening
+                    ? 'bg-red-500/15 text-red-600'
+                    : 'text-[#5c6f66] hover:text-[#2d6a4f] hover:bg-[#d8f3dc]/60'
+                }`}
+                title={isListening ? 'Stop' : 'Voice search'}
+                aria-label={isListening ? 'Stop voice search' : 'Voice search'}
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 px-3.5 py-3 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/80 dark:bg-[#121a16] text-sm text-[#1a2e24] dark:text-[#e7efe9]">
-            <MapPin className="w-4 h-4 text-[#40916c] shrink-0" />
-            <select
-              id="zone-select"
-              value={selectedZone}
-              onChange={(e) => setSelectedZone(e.target.value)}
-              className="bg-transparent font-medium focus:outline-hidden cursor-pointer min-w-0"
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 px-3.5 py-3 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white dark:bg-[#121a16] text-sm text-[#1a2e24] dark:text-[#e7efe9]">
+              <MapPin className="w-4 h-4 text-[#40916c] shrink-0" />
+              <select
+                id="zone-select"
+                value={selectedZone}
+                onChange={(e) => setSelectedZone(e.target.value)}
+                className="bg-transparent font-medium focus:outline-hidden cursor-pointer min-w-0"
+              >
+                {ZONE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`px-3.5 py-3 rounded-2xl text-sm font-medium border transition-colors cursor-pointer ${
+                showFilters || selectedDietary.length > 0
+                  ? 'bg-[#2d6a4f] text-white border-[#2d6a4f]'
+                  : 'bg-white dark:bg-[#121a16] border-[#2d6a4f]/15 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9]'
+              }`}
             >
-              {ZONE_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            className={`px-3.5 py-3 rounded-2xl text-sm font-medium border transition-colors cursor-pointer ${
-              showFilters || selectedDietary.length > 0
-                ? 'bg-[#2d6a4f] text-white border-[#2d6a4f]'
-                : 'bg-white/80 dark:bg-[#121a16] border-[#2d6a4f]/15 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9]'
-            }`}
-          >
-            Diet{selectedDietary.length > 0 ? ` · ${selectedDietary.length}` : ''}
-          </button>
+              Diet{selectedDietary.length > 0 ? ` · ${selectedDietary.length}` : ''}
+            </button>
+          </div>
         </div>
       </div>
 

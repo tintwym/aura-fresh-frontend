@@ -47,6 +47,8 @@ export interface PaymentMethod {
   accountName: string;
   accountNumber: string; // or masked phone/card
   maskedCardNumber?: string;
+  /** Card expiry as MM/YY — never store CVV. */
+  cardExpiry?: string;
   isDefault: boolean;
 }
 
