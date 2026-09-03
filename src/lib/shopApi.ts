@@ -21,6 +21,8 @@ export type ApiProduct = {
   expiryDate?: string;
   deleted?: boolean;
   images?: ApiProductImage[];
+  averageRating?: number | null;
+  reviewCount?: number | null;
 };
 
 export type ApiCartItem = {
@@ -184,8 +186,11 @@ export async function syncCartToApi(
   }
 }
 
-export async function createCheckoutSession(): Promise<{ sessionId: string; checkoutUrl: string }> {
-  const res = await authFetch('/checkout', { method: 'POST' });
+export async function createCheckoutSession(
+  zone?: string,
+): Promise<{ sessionId: string; checkoutUrl: string }> {
+  const params = zone ? `?zone=${encodeURIComponent(zone)}` : '';
+  const res = await authFetch(`/checkout${params}`, { method: 'POST' });
   const data = (await res.json()) as { sessionId?: string; checkoutUrl?: string };
   if (!data.checkoutUrl || !data.sessionId) {
     throw new AuthApiError(500, 'Checkout session missing URL');

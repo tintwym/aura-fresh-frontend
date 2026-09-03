@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
-  Bell, ShoppingCart, Moon, Sun, ShieldAlert, Sparkles, MapPin,
-  Check, Home, Truck, Mic, FileText, LogIn, Monitor
+  Bell, ShoppingCart, Moon, Sun, MapPin,
+  Home, Truck, Mic, FileText, LogIn, Monitor, ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Domain types & Mock data
 import { GroceryItem, CartItem, Order, UserProfile, OrderStatus } from './types';
-import { INITIAL_GROCERIES } from './data/groceries';
 
 // Subcomponents
 import GroceryCatalog from './components/GroceryCatalog';
@@ -35,13 +33,19 @@ import {
   storeToken,
 } from './lib/authApi';
 import { fetchOrderHistory, fetchProducts, fetchCart, syncCartToApi } from './lib/shopApi';
-import { mapApiOrderToUiOrder, mapApiCartToCartItems, mapProductToGrocery } from './lib/mapProduct';
+import {
+  mapApiOrderToUiOrder,
+  mapApiCartToCartItems,
+  mapProductToGrocery,
+  purchaseCountsFromOrders,
+} from './lib/mapProduct';
 import {
   fetchProfile,
   persistDefaultAddress,
   profileToAddresses,
 } from './lib/profileApi';
 import { submitReview } from './lib/reviewApi';
+import { fetchNotifications, markAllNotificationsRead } from './lib/notificationApi';
 import { AuthApiError } from './lib/authValidation';
 
 export default function App() {
@@ -138,19 +142,16 @@ export default function App() {
   const [celebratingOrder, setCelebratingOrder] = useState<Order | null>(null);
   const [isOrderDetailsOpen, setIsOrderDetailsOpen] = useState(false);
 
-  // Core Data States
-  const [groceries, setGroceries] = useState<GroceryItem[]>(INITIAL_GROCERIES);
+  // Core data — catalog starts empty until the API responds (no mock products).
+  const [groceries, setGroceries] = useState<GroceryItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [purchaseCounts, setPurchaseCounts] = useState<Record<string, number>>({
-    'g1': 5, // Shwe Bo Paw San Premium Rice
-    'g6': 4, // Pyin Oo Lwin Highland Coffee Beans
-    'g2': 3, // Shan State Organic Avocados
-    'g8': 2  // Milk
-  });
 
-  // Real account fields come from the API after sign-in (no demo customer).
+  const purchaseCounts = useMemo(() => purchaseCountsFromOrders(orders), [orders]);
+
   const [profile, setProfile] = useState<UserProfile>(() => createEmptyProfile());
 
   const navigate = useNavigate();
@@ -198,58 +199,47 @@ export default function App() {
     };
   }, []);
 
-  // Load real catalog from Spring Boot (seeded groceries). Keep mock only as offline fallback.
+  // Load live catalog from Spring Boot API only.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setCatalogLoading(true);
+      setCatalogError(null);
       try {
         const products = await fetchProducts();
-        if (cancelled || products.length === 0) return;
+        if (cancelled) return;
         const mapped = products.map(mapProductToGrocery);
         setGroceries(mapped);
-        // Rematch open cart lines to API product UUIDs (mock ids cannot checkout)
         setCart((prev) =>
           prev
             .map((line) => {
-              const match = mapped.find(
-                (g) => g.name.toLowerCase() === line.item.name.toLowerCase(),
-              );
+              const match = mapped.find((g) => g.id === line.item.id);
               return match ? { ...line, item: { ...match } } : null;
             })
             .filter((line): line is CartItem => line != null),
         );
-        // Remap quick-reorder counts from demo ids → live product ids
-        setPurchaseCounts((prev) => {
-          const next: Record<string, number> = {};
-          for (const [oldId, count] of Object.entries(prev)) {
-            const n = Number(count);
-            if (!Number.isFinite(n)) continue;
-            const demo = INITIAL_GROCERIES.find((g) => g.id === oldId);
-            const live = mapped.find(
-              (g) =>
-                g.id === oldId ||
-                (demo && g.name.toLowerCase() === demo.name.toLowerCase()),
-            );
-            if (live) next[live.id] = n;
-          }
-          return Object.keys(next).length ? next : prev;
-        });
-      } catch {
+        if (mapped.length === 0) {
+          setCatalogError('No products are listed yet. Check back soon.');
+        }
+      } catch (err) {
         if (!cancelled) {
+          setGroceries([]);
+          const msg =
+            err instanceof AuthApiError
+              ? err.message
+              : 'Could not reach the Aura Fresh API. Please try again.';
+          setCatalogError(msg);
           const id = `toast_catalog_${Date.now()}`;
           setToasts((prev) => [
             ...prev,
-            {
-              id,
-              title: 'Catalog offline',
-              message: 'Showing demo products. Could not reach the Aura Fresh API — check your connection or try again shortly.',
-              type: 'warning',
-            },
+            { id, title: 'Catalog unavailable', message: msg, type: 'warning' },
           ]);
           setTimeout(() => {
             setToasts((prev) => prev.filter((t) => t.id !== id));
           }, 4000);
         }
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
       }
     })();
     return () => {
@@ -274,6 +264,46 @@ export default function App() {
     };
   }, [isSignedIn, groceries]);
 
+  // Poll in-app order notifications from the API
+  useEffect(() => {
+    if (!isSignedIn || !getStoredToken()) {
+      setNotifications([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await fetchNotifications();
+        if (cancelled) return;
+        setNotifications(
+          list.map((n) => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            type: (n.type as NotificationMsg['type']) || 'order',
+            timestamp: n.createdAt
+              ? new Date(n.createdAt).toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'Just now',
+            read: Boolean(n.read),
+          })),
+        );
+      } catch {
+        /* ignore — inbox stays as-is */
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isSignedIn]);
+
   // Open cart when returning from Stripe cancel URL /cart
   useEffect(() => {
     if (window.location.pathname === '/cart') {
@@ -287,25 +317,8 @@ export default function App() {
     else setIsAuthOpen(true);
   };
 
-  // Push notifications inbox
-  const [notifications, setNotifications] = useState<NotificationMsg[]>([
-    {
-      id: 'notif_welcome',
-      title: 'Welcome to Aura Fresh! 🎉',
-      message: 'Earn points on fresh organic Shan avocados and Shwe Bo premium rice instantly. Your GDPR cookies are securely stored.',
-      type: 'info',
-      timestamp: 'Just now',
-      read: false
-    },
-    {
-      id: 'notif_low_stock',
-      title: '⚡ Critical Stock Alert',
-      message: 'Only 4 bags remaining of Pyin Oo Lwin Highland Coffee. Set a repeat weekly subscription to secure your stock!',
-      type: 'inventory',
-      timestamp: '2 hours ago',
-      read: false
-    }
-  ]);
+  // Notifications — only real session events (no seeded demo inbox)
+  const [notifications, setNotifications] = useState<NotificationMsg[]>([]);
 
   // Handle Toasts & Notifications
   const handleAddToast = (title: string, message: string, type: 'success' | 'warning' | 'info' | 'inventory') => {
@@ -443,7 +456,7 @@ export default function App() {
     }
 
     setOrders(prev => [order, ...prev]);
-    // Deduct stock levels in local store (sum all cart lines for the same SKU)
+    // Reflect stock sold until next catalog refresh from API
     setGroceries(prevGroceries =>
       prevGroceries.map(gItem => {
         const totalQty = order.items
@@ -452,10 +465,9 @@ export default function App() {
         if (totalQty > 0) {
           const newStock = Math.max(0, gItem.stock - totalQty);
           if (newStock <= 5 && newStock > 0) {
-            // Trigger automatic low inventory warning
             handleAddNotification(
-              '⚠️ Critical Inventory warning',
-              `Stock levels for ${gItem.name} have collapsed to ${newStock} units left!`,
+              'Low stock',
+              `${gItem.name} has only ${newStock} left.`,
               'inventory'
             );
           }
@@ -464,15 +476,6 @@ export default function App() {
         return gItem;
       })
     );
-    // Update purchase counts for Quick Reorder
-    setPurchaseCounts(prev => {
-      const updated = { ...prev };
-      order.items.forEach(cItem => {
-        updated[cItem.item.id] = (updated[cItem.item.id] || 0) + cItem.quantity;
-      });
-      return updated;
-    });
-    // Set active tracking modal & trigger celebratory animation
     setActiveTrackingOrder(order);
     setCelebratingOrder(order);
   };
@@ -540,28 +543,28 @@ export default function App() {
         <Route
           path="*"
           element={
-    <div className={`min-h-screen pb-20 sm:pb-8 transition-colors duration-300 ${isDarkMode ? 'bg-[#0F0F0F] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+    <div className="min-h-screen pb-20 sm:pb-8 text-[#1a2e24] dark:text-[#e7efe9] transition-colors duration-300">
       {/* HEADER NAVBAR */}
-      <header className="sticky top-0 z-40 bg-white/90 dark:bg-[#0F0F0F]/90 backdrop-blur-md border-b border-slate-200/60 dark:border-white/10 transition-colors">
+      <header className="sticky top-0 z-40 bg-[#eef4ef]/85 dark:bg-[#0c1410]/90 backdrop-blur-md border-b border-[#2d6a4f]/12 dark:border-white/8 transition-colors">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Logo & Platform Name */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <a href="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0 no-underline">
             <img
               src="/icon-192.png"
-              alt="Aura Fresh"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md shadow-emerald-500/15 object-cover"
+              alt=""
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl object-cover ring-1 ring-[#2d6a4f]/20"
               width={40}
               height={40}
             />
             <div className="hidden min-[380px]:block">
-              <h1 className="font-display font-black text-base sm:text-lg tracking-tight leading-none bg-linear-to-r from-emerald-500 to-emerald-600 dark:from-white dark:to-emerald-400 bg-clip-text text-transparent">
-                AURA FRESH
+              <h1 className="font-display font-semibold text-lg sm:text-xl tracking-tight leading-none text-[#1a2e24] dark:text-[#e7efe9]">
+                Aura Fresh
               </h1>
-              <span className="text-[8px] sm:text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block mt-0.5">
-                Myanmar Groceries
+              <span className="text-[10px] font-medium text-[#5c6f66] dark:text-[#8a9e94] block mt-0.5">
+                Yangon groceries
               </span>
             </div>
-          </div>
+          </a>
 
           {/* Global Fuzzy Search Bar */}
           <NavbarSearch
@@ -585,26 +588,26 @@ export default function App() {
             {/* Order Details & Receipts Modal Toggle */}
             <button
               onClick={() => setIsOrderDetailsOpen(true)}
-              className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#161616] dark:hover:bg-[#202020] border border-slate-200/60 dark:border-white/10 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="p-2 sm:px-3 sm:py-1.5 bg-white/70 hover:bg-white dark:bg-[#121a16] dark:hover:bg-[#1a2420] border border-[#2d6a4f]/12 dark:border-white/10 text-[#1a2e24] dark:text-[#e7efe9] font-semibold text-xs rounded-2xl flex items-center gap-1.5 cursor-pointer transition-colors"
               title="View past order receipts & reorder"
             >
-              <FileText className="w-4 h-4 text-emerald-500" />
-              <span className="hidden lg:inline">Order History</span>
+              <FileText className="w-4 h-4 text-[#40916c]" />
+              <span className="hidden lg:inline">Orders</span>
             </button>
 
             {/* Theme toggle — cycles System (auto) → Light → Dark */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#161616] hover:bg-slate-50 dark:hover:bg-[#202020] text-slate-600 dark:text-slate-300 cursor-pointer transition-colors"
+              className="p-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/70 dark:bg-[#121a16] hover:bg-white dark:hover:bg-[#1a2420] text-[#5c6f66] dark:text-[#8a9e94] cursor-pointer transition-colors"
               aria-label={themeLabel}
               title={themeLabel}
             >
               {themePref === 'system' ? (
-                <Monitor className="w-4.5 h-4.5 text-emerald-500" />
+                <Monitor className="w-4.5 h-4.5 text-[#2d6a4f]" />
               ) : isDarkMode ? (
-                <Sun className="w-4.5 h-4.5 text-amber-400" />
+                <Sun className="w-4.5 h-4.5 text-amber-300" />
               ) : (
-                <Moon className="w-4.5 h-4.5 text-slate-600" />
+                <Moon className="w-4.5 h-4.5 text-[#5c6f66]" />
               )}
             </button>
 
@@ -612,12 +615,12 @@ export default function App() {
             <button
               id="notif-toggle-btn"
               onClick={() => setIsNotificationOpen(true)}
-              className="hidden sm:flex p-2 rounded-xl border border-slate-100 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#161616] text-slate-500 dark:text-slate-400 relative cursor-pointer"
+              className="hidden sm:flex p-2 rounded-2xl border border-[#2d6a4f]/12 dark:border-white/10 hover:bg-white/80 dark:hover:bg-[#121a16] text-[#5c6f66] dark:text-[#8a9e94] relative cursor-pointer"
               aria-label="Open notifications box"
             >
               <Bell className="w-4.5 h-4.5" />
               {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#c45c26] rounded-full" />
               )}
             </button>
 
@@ -625,13 +628,13 @@ export default function App() {
             <button
               id="cart-toggle-btn"
               onClick={() => setIsCartOpen(true)}
-              className="p-2 sm:px-3 sm:py-2 bg-emerald-500 text-black font-extrabold rounded-xl shadow-md hover:bg-emerald-400 transition-colors relative flex items-center gap-1.5 cursor-pointer"
+              className="p-2 sm:px-3.5 sm:py-2 bg-[#2d6a4f] text-white font-semibold rounded-2xl hover:bg-[#40916c] transition-colors relative flex items-center gap-1.5 cursor-pointer shadow-market"
               aria-label="View shopping cart"
             >
               <ShoppingCart className="w-4.5 h-4.5" />
-              <span className="hidden sm:inline text-xs font-black">Cart</span>
+              <span className="hidden sm:inline text-xs font-semibold tracking-wide">Cart</span>
               {cart.length > 0 && (
-                <span className="bg-white text-emerald-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                <span className="bg-white text-[#2d6a4f] text-[10px] font-bold px-1.5 py-0.5 rounded-md">
                   {cart.reduce((sum, item) => sum + item.quantity, 0)}
                 </span>
               )}
@@ -642,7 +645,7 @@ export default function App() {
               <button
                 id="profile-toggle-btn"
                 onClick={() => setIsProfileOpen(true)}
-                className="hidden sm:flex items-center gap-2 border border-slate-200 dark:border-white/10 p-1 rounded-full hover:bg-slate-50 dark:hover:bg-[#161616] transition-colors cursor-pointer"
+                className="hidden sm:flex items-center gap-2 border border-[#2d6a4f]/15 dark:border-white/10 p-1 rounded-full hover:bg-white/80 dark:hover:bg-[#121a16] transition-colors cursor-pointer"
                 aria-label="Open customer profile"
               >
                 {profile.avatarUrl ? (
@@ -653,7 +656,7 @@ export default function App() {
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-600">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d8f3dc] text-xs font-semibold text-[#2d6a4f]">
                     {(profile.name || 'A').charAt(0).toUpperCase()}
                   </span>
                 )}
@@ -662,7 +665,7 @@ export default function App() {
               <button
                 id="profile-toggle-btn"
                 onClick={() => setIsAuthOpen(true)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-black text-xs font-extrabold shadow-md hover:bg-emerald-400 transition-colors cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-[#2d6a4f]/25 bg-white/80 dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] text-xs font-semibold hover:bg-white dark:hover:bg-[#1a2420] transition-colors cursor-pointer"
                 aria-label="Sign in or create account"
               >
                 <LogIn className="w-4 h-4" />
@@ -673,53 +676,67 @@ export default function App() {
         </div>
       </header>
 
-      {/* CORE HERO PANEL */}
-      <section className="max-w-7xl mx-auto px-4 py-8 font-sans">
-        <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-neutral-950 via-[#121212] to-neutral-950 text-white p-6 md:p-10 shadow-xl border border-white/5">
-          {/* background design assets */}
-          <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-emerald-500/5 blur-3xl -translate-y-20 translate-x-20" />
-          <div className="absolute bottom-0 left-1/3 w-64 h-64 rounded-full bg-[#10b981]/5 blur-3xl translate-y-20" />
-
-          <div className="max-w-xl space-y-4 relative z-10">
-            <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-md tracking-wider border border-emerald-500/25">
-              <Sparkles className="w-3 h-3 animate-spin" /> Gold Premium Food Club
-            </span>
-            <h2 className="font-display font-extrabold text-2xl md:text-4xl leading-tight text-white">
-              Aura Fresh — organic groceries, delivered.
-            </h2>
-            <p className="text-xs md:text-sm text-slate-300 leading-relaxed max-w-md">
-              Order premium Shan State avocados, traditional handmade chickpea tofu, and aromatic Shwe Bo Paw San rice securely. Pay with Stripe Checkout (MMK). Fully compliant with GDPR data policies.
+      {/* FULL-BLEED HERO — brand first */}
+      <section className="relative isolate min-h-[88vh] sm:min-h-[92vh] w-full overflow-hidden">
+        <motion.img
+          initial={{ scale: 1.08, opacity: 0.85 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1] }}
+          src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=2400&q=80"
+          alt="Fresh produce at a morning market"
+          className="absolute inset-0 h-full w-full object-cover"
+          fetchPriority="high"
+        />
+        <div
+          className="absolute inset-0 bg-linear-to-t from-[#0c1410]/92 via-[#0c1410]/45 to-[#0c1410]/25"
+          aria-hidden
+        />
+        <div className="relative z-10 flex min-h-[88vh] sm:min-h-[92vh] flex-col justify-end px-5 pb-16 pt-28 sm:px-10 sm:pb-20 lg:px-16">
+          <motion.div
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-2xl"
+          >
+            <p className="font-display text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-semibold tracking-tight text-white text-balance leading-[0.95]">
+              Aura Fresh
             </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                <Check className="w-4 h-4 text-emerald-400" /> Free delivery above 15,000 MMK
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                <Check className="w-4 h-4 text-emerald-400" /> Secure 256-bit bank encryption
-              </div>
+            <h2 className="mt-5 font-display text-xl sm:text-2xl md:text-3xl font-medium text-[#d8f3dc] text-balance leading-snug">
+              Morning-market groceries, delivered across Yangon.
+            </h2>
+            <p className="mt-3 max-w-md text-sm sm:text-base text-white/75 leading-relaxed">
+              Local produce, pantry staples, and everyday essentials — paid securely in MMK.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href="#catalog-section"
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#40916c] px-5 py-3 text-sm font-semibold text-white shadow-market hover:bg-[#52b788] transition-colors"
+              >
+                Shop the market
+                <ArrowDown className="w-4 h-4" />
+              </a>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
-      {/* RECENT DELIVERIES LOG (Customer convenience) */}
+      {/* Active orders — only when present */}
       {orders.length > 0 && (
-        <section className="max-w-7xl mx-auto px-4 pb-4">
-          <div className="p-4 bg-emerald-500/5 dark:bg-[#121212] border border-emerald-500/10 dark:border-white/5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="text-xs">
-              <span className="font-bold text-emerald-500 dark:text-emerald-400">Active Delivery Trackers</span>
-              <p className="text-slate-500 dark:text-slate-400">You have active grocery shipments. Track them on our GIS interactive street map.</p>
+        <section className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#2d6a4f]/15 dark:border-white/10 pb-5">
+            <div>
+              <h3 className="font-display font-semibold text-lg text-[#1a2e24] dark:text-[#e7efe9]">Your deliveries</h3>
+              <p className="text-sm text-[#5c6f66] dark:text-[#8a9e94]">Track an active order anytime.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {orders.map(o => (
                 <button
                   key={o.id}
                   onClick={() => setActiveTrackingOrder(o)}
-                  className="px-3 py-1.5 bg-white dark:bg-[#161616] hover:bg-slate-50 dark:hover:bg-[#1f1f1f] text-slate-700 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-white/80 dark:bg-[#121a16] hover:bg-white dark:hover:bg-[#1a2420] text-[#1a2e24] dark:text-[#e7efe9] border border-[#2d6a4f]/15 dark:border-white/10 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1.5"
                 >
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Track {o.id} ({o.status})</span>
+                  <MapPin className="w-3.5 h-3.5 text-[#40916c]" />
+                  <span>{o.id} · {o.status}</span>
                 </button>
               ))}
             </div>
@@ -728,7 +745,7 @@ export default function App() {
       )}
 
       {/* PRODUCT CATALOG CONTENT AREA */}
-      <main className="max-w-7xl mx-auto px-4 pb-16">
+      <main className="max-w-7xl mx-auto px-4 pt-8 pb-20">
         <QuickReorder
           groceries={groceries}
           purchaseCounts={purchaseCounts}
@@ -737,6 +754,28 @@ export default function App() {
         />
         <GroceryCatalog
           groceries={groceries}
+          isLoading={catalogLoading}
+          error={catalogError}
+          onRetry={() => {
+            setCatalogLoading(true);
+            setCatalogError(null);
+            fetchProducts()
+              .then((products) => {
+                setGroceries(products.map(mapProductToGrocery));
+                if (products.length === 0) {
+                  setCatalogError('No products are listed yet. Check back soon.');
+                }
+              })
+              .catch((err) => {
+                setGroceries([]);
+                setCatalogError(
+                  err instanceof AuthApiError
+                    ? err.message
+                    : 'Could not reach the Aura Fresh API. Please try again.',
+                );
+              })
+              .finally(() => setCatalogLoading(false));
+          }}
           onAddToCart={handleAddToCart}
           selectedZone={selectedZone}
           setSelectedZone={setSelectedZone}
@@ -750,47 +789,32 @@ export default function App() {
         />
       </main>
 
-      {/* GDPR FIRST-TIME CONSENT BANNER */}
+      {/* Privacy consent — quiet first-visit notice */}
       <AnimatePresence>
         {!gdprBannerAccepted && (
           <motion.div
-            initial={{ y: 80, opacity: 0 }}
+            initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            className="fixed bottom-0 inset-x-0 bg-slate-900 dark:bg-black text-white p-4 border-t border-white/10 z-999 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xl font-sans"
+            exit={{ y: 40, opacity: 0 }}
+            className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-xl z-999 rounded-2xl bg-[#1a2e24]/95 backdrop-blur-md text-white p-4 shadow-market border border-white/10 flex flex-col sm:flex-row items-start sm:items-center gap-3"
           >
-            <div className="flex items-start gap-3 max-w-3xl">
-              <ShieldAlert className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-slate-300 space-y-1">
-                <p className="font-bold text-white">General Data Protection Regulation (GDPR) Invariant Notice</p>
-                <p className="leading-relaxed">
-                  We collect delivery zones and contact details to fulfill orders and process Stripe payments. Data is stored securely on Aura Fresh servers. By clicking accept, you consent to our privacy policy.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
+            <p className="text-xs text-white/80 leading-relaxed flex-1">
+              We use your delivery details to fulfill orders and process Stripe payments. By continuing, you agree to our privacy policy.
+            </p>
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto">
               <button
-                onClick={() => {
-                  setProfile({
-                    ...profile,
-                    addresses: [],
-                    paymentMethods: []
-                  });
-                  handleAddToast('Privacy Purge Approved', 'Nonspecific billing details permanently erased.', 'info');
-                  dismissGdprBanner();
-                }}
-                className="px-3 py-1.5 border border-slate-700 hover:bg-slate-800 text-slate-400 text-xs font-semibold rounded-lg transition-all"
+                type="button"
+                onClick={dismissGdprBanner}
+                className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white transition-colors"
               >
-                Decline & Restrict
+                Dismiss
               </button>
               <button
-                onClick={() => {
-                  dismissGdprBanner();
-                  handleAddToast('GDPR Complied', 'Data policies and caching verified.', 'success');
-                }}
-                className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold rounded-lg shadow-md transition-all cursor-pointer"
+                type="button"
+                onClick={dismissGdprBanner}
+                className="flex-1 sm:flex-none px-4 py-1.5 bg-[#40916c] hover:bg-[#52b788] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
               >
-                Accept & Consented
+                Got it
               </button>
             </div>
           </motion.div>
@@ -877,7 +901,8 @@ export default function App() {
       <NotificationCenter
         notifications={notifications}
         onMarkAllAsRead={() => {
-          setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+          markAllNotificationsRead().catch(() => undefined);
           handleAddToast('Inbox Cleared', 'Marked all notifications as read.', 'success');
         }}
         onClearAll={() => {
@@ -919,7 +944,7 @@ export default function App() {
       />
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0F0F0F]/95 backdrop-blur-md border-t border-slate-200 dark:border-white/10 sm:hidden flex justify-around items-center py-1.5 px-1 shadow-2xl">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#eef4ef]/95 dark:bg-[#0c1410]/95 backdrop-blur-md border-t border-[#2d6a4f]/12 dark:border-white/10 sm:hidden flex justify-around items-center py-1.5 px-1">
         <button
           onClick={() => {
             setIsProfileOpen(false);

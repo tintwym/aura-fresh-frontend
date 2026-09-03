@@ -7,6 +7,13 @@ import { CartItem, UserProfile, DeliveryAddress, GroceryItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { createCheckoutSession, syncCartToApi } from '../lib/shopApi';
 import { persistDefaultAddress } from '../lib/profileApi';
+import {
+  FREE_DELIVERY_OVER_MMK,
+  deliveryEtaFor,
+  deliveryFeeFor,
+  normalizeDeliveryZone,
+  type DeliveryZone,
+} from '../lib/deliveryZones';
 import { AuthApiError } from '../lib/authValidation';
 
 interface CartAndCheckoutProps {
@@ -92,11 +99,6 @@ export default function CartAndCheckout({
     return cart.some(item => item.isSubscription);
   }, [cart]);
 
-  // Delivery is an estimate only — Stripe charges cart product prices from the API.
-  const deliveryFee = subtotal > 15000 ? 0 : 2500; // Free delivery estimate over 15k MMK
-  const stripeTotal = subtotal;
-  const grandTotal = stripeTotal;
-
   // Address & Payment Resolver
   const activeAddress = useMemo<DeliveryAddress | null>(() => {
     if (selectedAddressId && selectedAddressId !== 'manual') {
@@ -115,6 +117,19 @@ export default function CartAndCheckout({
     };
   }, [selectedAddressId, profile.addresses, manualAddress]);
 
+  // Delivery fee by Yangon zone — charged via Stripe with the cart.
+  const checkoutZone = useMemo(() => {
+    if (selectedAddressId === 'manual') {
+      return normalizeDeliveryZone(manualAddress.zone);
+    }
+    if (activeAddress) {
+      return normalizeDeliveryZone(activeAddress.addressLine + ' ' + activeAddress.city);
+    }
+    return 'Yankin' as DeliveryZone;
+  }, [selectedAddressId, manualAddress.zone, activeAddress]);
+
+  const deliveryFee = deliveryFeeFor(checkoutZone, subtotal);
+  const grandTotal = subtotal + deliveryFee;
 
   // Dynamic Expected Delivery Time calculation based on Zone and Time of Day
   const estimatedDeliveryInfo = useMemo(() => {
@@ -242,7 +257,7 @@ export default function CartAndCheckout({
       );
 
       setProcessingStatus('Creating secure Stripe Checkout…');
-      const { checkoutUrl } = await createCheckoutSession();
+      const { checkoutUrl } = await createCheckoutSession(checkoutZone);
       setProcessingStatus('Redirecting to Stripe…');
       window.location.assign(checkoutUrl);
     } catch (err) {
@@ -537,10 +552,10 @@ export default function CartAndCheckout({
                         onChange={e => setManualAddress({ ...manualAddress, zone: e.target.value })}
                         className="w-full px-3 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md"
                       >
-                        <option value="Downtown Yangon">Downtown Yangon</option>
-                        <option value="Yankin">Yankin</option>
-                        <option value="Bahan">Bahan</option>
-                        <option value="Hlaing">Hlaing</option>
+                        <option value="Downtown Yangon">Downtown Yangon — {deliveryFeeFor('Downtown Yangon', 0).toLocaleString()} Ks</option>
+                        <option value="Yankin">Yankin — {deliveryFeeFor('Yankin', 0).toLocaleString()} Ks</option>
+                        <option value="Bahan">Bahan — {deliveryFeeFor('Bahan', 0).toLocaleString()} Ks</option>
+                        <option value="Hlaing">Hlaing — {deliveryFeeFor('Hlaing', 0).toLocaleString()} Ks</option>
                       </select>
                     </div>
                     <div className="col-span-2">
@@ -742,23 +757,25 @@ export default function CartAndCheckout({
           {cart.length > 0 && (
             <div className="space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-slate-500">Items (Stripe)</span>
-                <span className="font-mono text-slate-700 dark:text-slate-300">{formatPrice(stripeTotal)}</span>
+                <span className="text-slate-500">Groceries</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">{formatPrice(subtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Delivery (estimate)</span>
-                <span className="font-mono text-slate-700 dark:text-slate-300">
+                <span className="text-slate-500">Delivery ({checkoutZone})</span>
+                <span className={`font-mono ${deliveryFee === 0 ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'}`}>
                   {deliveryFee === 0 ? 'FREE' : formatPrice(deliveryFee)}
                 </span>
               </div>
               <div className="flex justify-between border-t border-white/10 pt-2 text-sm font-bold">
                 <span className="text-slate-800 dark:text-white">Pay with Stripe</span>
                 <span className="font-mono text-emerald-400 font-extrabold text-base">
-                  {formatPrice(stripeTotal)}
+                  {formatPrice(grandTotal)}
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                Stripe charges item prices only. Delivery estimate is confirmed after your order.
+                {deliveryFee === 0
+                  ? `Free delivery over ${FREE_DELIVERY_OVER_MMK.toLocaleString()} MMK · ETA ${deliveryEtaFor(checkoutZone)}`
+                  : `Delivery for ${checkoutZone} is charged with Stripe · ETA ${deliveryEtaFor(checkoutZone)}`}
               </p>
             </div>
           )}
@@ -802,7 +819,7 @@ export default function CartAndCheckout({
                 <span>
                   {checkoutStep === 'cart' && 'Proceed to Shipping'}
                   {checkoutStep === 'shipping' && 'Review & pay with Stripe'}
-                  {checkoutStep === 'confirm' && (isProcessing ? 'Opening Stripe…' : `Pay ${formatPrice(stripeTotal)} with Stripe`)}
+                  {checkoutStep === 'confirm' && (isProcessing ? 'Opening Stripe…' : `Pay ${formatPrice(grandTotal)} with Stripe`)}
                 </span>
                 {checkoutStep !== 'confirm' && <ArrowRight className="w-4 h-4" />}
               </button>

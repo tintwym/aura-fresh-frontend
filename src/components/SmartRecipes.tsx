@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useTransition } from 'react';
-import { Sparkles, ChefHat, Clock, Utensils, BookOpen, Plus, Check, Loader2 } from 'lucide-react';
+import { ChefHat, Clock, Utensils, BookOpen, Plus, Check, Loader2 } from 'lucide-react';
 import { GroceryItem, CartItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -163,35 +163,29 @@ export default function SmartRecipes({
   };
 
   return (
-    <div className="bg-slate-50 dark:bg-[#121212] border border-slate-200/60 dark:border-white/5 rounded-3xl p-6 shadow-xs mt-12 mb-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+    <section className="mt-16 pt-10 border-t border-[#2d6a4f]/12 dark:border-white/10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-purple-500/10 dark:bg-purple-950/20 rounded-lg text-purple-500">
-              <Sparkles className="w-5 h-5 text-purple-400 animate-pulse" />
-            </div>
-            <div>
-              <h3 className="font-display font-extrabold text-base md:text-lg text-slate-800 dark:text-white flex items-center gap-2">
-                Gemini Smart Recipes <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">AI Powered</span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Dynamic meal ideas based on the organic produce and premium ingredients currently in your cart.
-              </p>
-            </div>
-          </div>
+          <h3 className="font-display font-semibold text-2xl text-[#1a2e24] dark:text-[#e7efe9]">
+            Cook from your cart
+          </h3>
+          <p className="mt-1 text-sm text-[#5c6f66] dark:text-[#8a9e94]">
+            Meal ideas from what you&apos;ve already picked.
+          </p>
         </div>
 
         <button
+          type="button"
           onClick={refreshRecipes}
-          disabled={loading}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+          disabled={loading || cartItemNames.length === 0}
+          className="px-4 py-2.5 bg-[#2d6a4f] hover:bg-[#40916c] text-white rounded-2xl text-sm font-semibold transition-colors disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
         >
           {loading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <ChefHat className="w-3.5 h-3.5" />
           )}
-          <span>Refresh Ideas</span>
+          <span>Refresh ideas</span>
         </button>
       </div>
 
@@ -204,10 +198,10 @@ export default function SmartRecipes({
             className="flex flex-col items-center justify-center py-12 space-y-3"
           >
             <div className="relative">
-              <div className="w-12 h-12 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
-              <ChefHat className="w-6 h-6 text-purple-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-bounce" />
+              <div className="w-12 h-12 border-4 border-[#2d6a4f]/20 border-t-[#40916c] rounded-full animate-spin"></div>
+              <ChefHat className="w-6 h-6 text-[#40916c] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-bounce" />
             </div>
-            <p className="text-xs font-medium text-purple-500 dark:text-purple-400 animate-pulse">
+            <p className="text-xs font-medium text-[#40916c] dark:text-[#52b788] animate-pulse">
               Consulting Gemini culinary chef...
             </p>
             <p className="text-[10px] text-slate-400 max-w-xs text-center">
@@ -224,7 +218,7 @@ export default function SmartRecipes({
             <p className="text-xs text-red-500 font-semibold mb-2">{error}</p>
             <button
               onClick={refreshRecipes}
-              className="text-xs font-bold text-purple-500 underline hover:text-purple-400"
+              className="text-xs font-bold text-[#40916c] underline hover:text-[#52b788]"
             >
               Retry generating recipes
             </button>
@@ -237,9 +231,9 @@ export default function SmartRecipes({
             className="p-8 border border-dashed border-slate-300 dark:border-white/10 rounded-2xl text-center py-12"
           >
             <Utensils className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
-            <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Your basket is empty!</p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
-              Add delicious groceries, fresh Shan state avocados, or local organic greens to your cart to receive customized culinary recipes.
+            <p className="text-sm font-semibold text-[#5c6f66]">Add a few groceries first</p>
+            <p className="text-xs text-[#5c6f66]/80 mt-1 max-w-sm mx-auto">
+              We&apos;ll suggest meals from what&apos;s in your cart.
             </p>
           </motion.div>
         ) : (
@@ -259,7 +253,7 @@ export default function SmartRecipes({
                     <h4 className="font-display font-extrabold text-sm md:text-base text-slate-800 dark:text-white leading-tight">
                       {recipe.name}
                     </h4>
-                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-600 dark:text-purple-400">
+                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#d8f3dc] text-[#2d6a4f] dark:text-[#52b788]">
                       {recipe.difficulty}
                     </span>
                   </div>
@@ -310,7 +304,7 @@ export default function SmartRecipes({
                               onClick={() => handleAddMissingIngredient(item)}
                               className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-all cursor-pointer ${
                                 catalogItem
-                                  ? 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                                  ? 'bg-[#d8f3dc]/60 hover:bg-[#2d6a4f]/20 text-[#2d6a4f] dark:text-[#52b788] border border-[#2d6a4f]/20'
                                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 border border-transparent'
                               }`}
                               title={catalogItem ? `Add ${catalogItem.name} (${catalogItem.price.toLocaleString()} MMK)` : `Ingredient not available directly`}
@@ -345,7 +339,7 @@ export default function SmartRecipes({
                 {recipe.missingIngredients.length > 0 && (
                   <button
                     onClick={() => handleAddAllMissing(recipe.missingIngredients)}
-                    className="w-full mt-2 py-2 bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full mt-2 py-2.5 bg-[#2d6a4f] hover:bg-[#40916c] text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Plus className="w-4 h-4 text-white stroke-[2.5px]" />
                     <span>Add All Available Missing Ingredients</span>
@@ -356,6 +350,6 @@ export default function SmartRecipes({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </section>
   );
 }

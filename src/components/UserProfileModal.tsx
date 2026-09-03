@@ -102,43 +102,32 @@ export default function UserProfileModal({
     };
   }, [allOrdersList]);
 
-  // Calculate user monthly spending history over last 6 months
+  // Monthly spend from real orders only (no simulated baselines)
   const monthlySpendingData = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const data = [];
-    
-    // Baseline simulated values so the chart is nicely populated with data on initial load
-    const simulatedBases = [45000, 52000, 38000, 64000, 59000];
-    
+
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
       const monthIndex = d.getMonth();
       const year = d.getFullYear();
       const monthLabel = `${months[monthIndex]} ${year}`;
-      
-      let amount = 0;
-      let orderCount = 0;
-      
-      if (i === 0) {
-        // Today/Current Month: sum all active orders from orders list
-        const currentMonthOrders = orders.filter(o => o.status !== 'cancelled');
-        const currentMonthTotal = currentMonthOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-        amount = 42000 + currentMonthTotal; // base of 42k + real live orders
-        orderCount = currentMonthOrders.length + 1; // base 1 order + actual orders
-      } else {
-        amount = simulatedBases[5 - i];
-        orderCount = Math.floor(Math.random() * 3) + 1;
-      }
-      
+
+      const monthOrders = allOrdersList.filter((o) => {
+        if (o.status === 'cancelled') return false;
+        const created = new Date(o.createdAt);
+        return created.getMonth() === monthIndex && created.getFullYear() === year;
+      });
+
       data.push({
         month: monthLabel,
-        amount: amount,
-        orders: orderCount
+        amount: monthOrders.reduce((sum, o) => sum + o.totalAmount, 0),
+        orders: monthOrders.length,
       });
     }
     return data;
-  }, [orders]);
+  }, [allOrdersList]);
 
   // Edit states — sync from server/auth profile when modal opens or identity changes
   const [name, setName] = useState(profile.name);

@@ -17,6 +17,8 @@ export interface GroceryItem {
   unit: string; // e.g., "500g", "1kg", "1 liter", "dozen"
   /** Shown for meat & dairy when the API provides expiryDate. */
   expiryDate?: string;
+  /** Number of customer reviews (from API). */
+  reviewCount?: number;
 }
 
 export interface CartItem {
@@ -85,13 +87,13 @@ export interface UserProfile {
   /** Auth method from API: LOCAL | GOOGLE | APPLE */
   authProvider?: string;
   loyaltyPoints: number;
-  balance: number; // Simulated wallet balance
+  balance: number; // Display wallet balance (not charged — Stripe is used for checkout)
   addresses: DeliveryAddress[];
   paymentMethods: PaymentMethod[];
   orderHistory: Order[];
   /** Coupon codes unlocked via loyalty redeem; required at checkout. */
   redeemedCoupons: string[];
-  /** Demo wallet top-ups used this session (capped). */
+  /** Demo wallet top-ups used this session (UI-only; Stripe is the real payment). */
   walletTopUpsUsed: number;
 }
 

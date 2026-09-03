@@ -130,15 +130,15 @@ frontend/
 
 ## Features
 
-- Live product catalog with search, filters, and zone chips
+- Live product catalog from the Spring Boot API (no mock products)
 - Cart with stock validation and Stripe Checkout (MMK)
 - Sign-in (username/password, Google OAuth)
 - Delivery address saved to the API before checkout
-- Order history and live status tracking
+- Order history and status from the API
 - Post-delivery product reviews
 - Smart Recipes (Gemini) from cart contents
 - Dark / light / system theme
-- Offline catalog fallback when the API is unreachable
+- Honest empty / error states when the API is unreachable
 
 ---
 
