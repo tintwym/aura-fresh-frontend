@@ -102,13 +102,30 @@ export default function SmartRecipes({
       if (match) return match;
     }
 
-    // Third pass: find by category fallback
-    if (cleanName.includes('vegetable') || cleanName.includes('lettuce') || cleanName.includes('tomato') || cleanName.includes('cabbage') || cleanName.includes('onion') || cleanName.includes('garlic')) {
-      match = groceries.find(g => g.category.toLowerCase().includes('fresh') || g.category.toLowerCase().includes('organic'));
-    } else if (cleanName.includes('meat') || cleanName.includes('chicken') || cleanName.includes('beef') || cleanName.includes('pork')) {
-      match = groceries.find(g => g.category.toLowerCase().includes('meat') || g.category.toLowerCase().includes('protein'));
+    // Third pass: find by supermarket aisle fallback
+    if (cleanName.includes('vegetable') || cleanName.includes('lettuce') || cleanName.includes('tomato') || cleanName.includes('cabbage') || cleanName.includes('onion') || cleanName.includes('garlic') || cleanName.includes('spinach')) {
+      match = groceries.find(g => {
+        const c = g.category.toLowerCase();
+        return c.includes('vegetable') || c.includes('herb') || c.includes('fresh fruit');
+      });
+    } else if (cleanName.includes('fruit') || cleanName.includes('mango') || cleanName.includes('banana') || cleanName.includes('apple') || cleanName.includes('avocado')) {
+      match = groceries.find(g => g.category.toLowerCase().includes('fruit'));
+    } else if (cleanName.includes('chicken') || cleanName.includes('poultry')) {
+      match = groceries.find(g => g.category.toLowerCase().includes('poultry'));
+    } else if (cleanName.includes('fish') || cleanName.includes('prawn') || cleanName.includes('shrimp') || cleanName.includes('seafood')) {
+      match = groceries.find(g => g.category.toLowerCase().includes('seafood'));
+    } else if (cleanName.includes('meat') || cleanName.includes('beef') || cleanName.includes('pork')) {
+      match = groceries.find(g => {
+        const c = g.category.toLowerCase();
+        return c.includes('fresh meat') || c.includes('poultry') || c.includes('meat');
+      });
     } else if (cleanName.includes('coffee') || cleanName.includes('tea')) {
-      match = groceries.find(g => g.category.toLowerCase().includes('bever') || g.category.toLowerCase().includes('coffee'));
+      match = groceries.find(g => {
+        const c = g.category.toLowerCase();
+        return c.includes('tea') || c.includes('coffee') || c.includes('drink') || c.includes('juice');
+      });
+    } else if (cleanName.includes('milk') || cleanName.includes('yogurt') || cleanName.includes('egg')) {
+      match = groceries.find(g => g.category.toLowerCase().includes('dairy'));
     }
 
     return match || null;

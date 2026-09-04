@@ -1,7 +1,8 @@
 import type { DietaryRestriction, GroceryItem, Order, OrderStatus, PaymentMethod, DeliveryAddress, CartItem } from '../types';
 import type { ApiCart, ApiOrder, ApiProduct } from './shopApi';
 
-const MEAT_DAIRY = /\b(meat|dairy|beef|chicken|pork|fish|milk|cheese|yogurt|butter)\b/i;
+const FRESH_PROTEIN_DAIRY =
+  /\b(poultry|seafood|fresh meat|meat|dairy|eggs|beef|chicken|pork|prawn|shrimp|fish|milk|cheese|yogurt|butter)\b/i;
 
 const DEFAULT_IMAGE =
   'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80';
@@ -17,7 +18,10 @@ function formatExpiry(expiryDate?: string): string | undefined {
 export function mapProductToGrocery(p: ApiProduct): GroceryItem {
   const stock = Number(p.stock ?? 0);
   const category = p.category?.trim() || 'General';
-  const needsExpiry = MEAT_DAIRY.test(category) || MEAT_DAIRY.test(p.name || '');
+  const aisleSkipsNameHeuristic = /sauce|condiment|oil|bakery|snack|biscuit/i.test(category);
+  const needsExpiry =
+    FRESH_PROTEIN_DAIRY.test(category) ||
+    (!aisleSkipsNameHeuristic && FRESH_PROTEIN_DAIRY.test(p.name || ''));
 
   return {
     id: String(p.id),
