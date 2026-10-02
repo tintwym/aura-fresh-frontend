@@ -341,7 +341,7 @@ export default function SmartRecipes({
                               onClick={() => handleAddMissingIngredient(item)}
                               className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-all cursor-pointer ${
                                 catalogItem
-                                  ? 'bg-[#d8f3dc]/60 hover:bg-[#2d6a4f]/20 text-[#2d6a4f] dark:text-[#52b788] border border-[#2d6a4f]/20'
+                                  ? 'bg-[#d8f3dc]/60 hover:bg-[#2d6a4f]/20 text-[#2d6a4f] border border-[#2d6a4f]/20 dark:bg-[#2d6a4f]/25 dark:hover:bg-[#2d6a4f]/40 dark:text-[#95d5b2] dark:border-[#52b788]/30'
                                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 border border-transparent'
                               }`}
                               title={catalogItem ? `Add ${catalogItem.name} (${catalogItem.price.toLocaleString()} MMK)` : `Ingredient not available directly`}
