@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { createCheckoutSession, syncCartToApi } from '../lib/shopApi';
 import { persistDefaultAddress } from '../lib/profileApi';
 import {
+  DELIVERY_ZONES,
   FREE_DELIVERY_OVER_MMK,
   deliveryEtaFor,
   deliveryFeeFor,
@@ -15,6 +16,7 @@ import {
   type DeliveryZone,
 } from '../lib/deliveryZones';
 import { AuthApiError } from '../lib/authValidation';
+import { Select } from './Select';
 
 interface CartAndCheckoutProps {
   cart: CartItem[];
@@ -547,16 +549,16 @@ export default function CartAndCheckout({
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">Availability Zone</label>
-                      <select
+                      <Select
+                        aria-label="Availability zone"
                         value={manualAddress.zone}
-                        onChange={e => setManualAddress({ ...manualAddress, zone: e.target.value as DeliveryZone })}
+                        onChange={zone => setManualAddress({ ...manualAddress, zone })}
+                        options={DELIVERY_ZONES.map(zone => ({
+                          value: zone,
+                          label: `${zone} — ${deliveryFeeFor(zone, 0).toLocaleString()} Ks`,
+                        }))}
                         className="w-full px-3 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md"
-                      >
-                        <option value="Downtown Yangon">Downtown Yangon — {deliveryFeeFor('Downtown Yangon', 0).toLocaleString()} Ks</option>
-                        <option value="Yankin">Yankin — {deliveryFeeFor('Yankin', 0).toLocaleString()} Ks</option>
-                        <option value="Bahan">Bahan — {deliveryFeeFor('Bahan', 0).toLocaleString()} Ks</option>
-                        <option value="Hlaing">Hlaing — {deliveryFeeFor('Hlaing', 0).toLocaleString()} Ks</option>
-                      </select>
+                      />
                     </div>
                     <div className="col-span-2">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">Delivery Address</label>

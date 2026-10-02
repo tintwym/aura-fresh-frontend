@@ -6,6 +6,7 @@ import { GroceryItem, DietaryRestriction } from '../types';
 import { DIETARY_OPTIONS, ZONE_OPTIONS } from '../data/groceries';
 import { fuzzySearchGroceries } from '../utils/fuzzySearch';
 import { motion, AnimatePresence } from 'motion/react';
+import { Select } from './Select';
 
 interface GroceryCatalogProps {
   groceries: GroceryItem[];
@@ -162,21 +163,15 @@ export default function GroceryCatalog({
       {/* Zone + diet — catalog filters only */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/80 dark:bg-[#121a16] text-sm text-[#1a2e24] dark:text-[#e7efe9]">
-            <MapPin className="w-4 h-4 text-[#40916c] shrink-0" />
-            <select
-              id="zone-select"
-              value={selectedZone}
-              onChange={(e) => setSelectedZone(e.target.value)}
-              className="bg-transparent font-medium focus:outline-hidden cursor-pointer min-w-0"
-            >
-              {ZONE_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            id="zone-select"
+            aria-label="Delivery zone"
+            value={selectedZone}
+            onChange={setSelectedZone}
+            options={ZONE_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+            icon={<MapPin className="w-4 h-4 text-[#40916c] shrink-0" />}
+            className="px-3 py-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/80 dark:bg-[#121a16] text-sm font-medium text-[#1a2e24] dark:text-[#e7efe9]"
+          />
 
           <button
             type="button"

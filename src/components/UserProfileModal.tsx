@@ -28,6 +28,16 @@ import {
   validateWalletAccount,
   type AddressFieldErrors,
 } from '../lib/profileValidation';
+import { DELIVERY_ZONES } from '../lib/deliveryZones';
+import { Select, type SelectOption } from './Select';
+
+const PAYMENT_PROVIDER_OPTIONS: SelectOption<PaymentMethod['type']>[] = [
+  { value: 'kbzpay', label: 'KBZPay Wallet' },
+  { value: 'wavepay', label: 'WavePay Wallet' },
+  { value: 'ayapay', label: 'AYA Pay Wallet' },
+  { value: 'mmqr', label: 'MMQR (National Standard QR)' },
+  { value: 'mpu', label: 'MPU Debit Card' },
+];
 
 interface SpendTooltipProps {
   active?: boolean;
@@ -893,18 +903,15 @@ export default function UserProfileModal({
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Delivery Zone</label>
-                          <select
+                          <Select
+                            aria-label="Delivery zone"
                             value={newAddress.zone}
-                            onChange={(e) => setNewAddress({ ...newAddress, zone: e.target.value })}
-                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden ${
+                            onChange={(zone) => setNewAddress({ ...newAddress, zone })}
+                            options={DELIVERY_ZONES.map((zone) => ({ value: zone, label: zone }))}
+                            className={`w-full px-2.5 py-1.5 border bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md ${
                               addressFieldErrors.zone ? 'border-red-400' : 'border-slate-200 dark:border-white/10'
                             }`}
-                          >
-                            <option value="Downtown Yangon">Downtown Yangon</option>
-                            <option value="Yankin">Yankin</option>
-                            <option value="Bahan">Bahan</option>
-                            <option value="Hlaing">Hlaing</option>
-                          </select>
+                          />
                           {addressFieldErrors.zone && (
                             <p className="text-[10px] text-red-500 mt-1">{addressFieldErrors.zone}</p>
                           )}
@@ -1069,25 +1076,21 @@ export default function UserProfileModal({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Provider Type</label>
-                          <select
+                          <Select
+                            aria-label="Provider type"
                             value={newPayment.type}
-                            onChange={(e) => {
+                            onChange={(type) => {
                               setPaymentFieldErrors({});
                               setNewPayment({
                                 ...newPayment,
-                                type: e.target.value as PaymentMethod['type'],
+                                type,
                                 expiry: '',
                                 cvv: '',
                               });
                             }}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md focus:outline-hidden"
-                          >
-                            <option value="kbzpay">KBZPay Wallet</option>
-                            <option value="wavepay">WavePay Wallet</option>
-                            <option value="ayapay">AYA Pay Wallet</option>
-                            <option value="mmqr">MMQR (National Standard QR)</option>
-                            <option value="mpu">MPU Debit Card</option>
-                          </select>
+                            options={PAYMENT_PROVIDER_OPTIONS}
+                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161616] text-xs text-slate-800 dark:text-white rounded-md"
+                          />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase">Account/Card Holder Name</label>
