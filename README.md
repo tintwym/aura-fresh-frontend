@@ -12,7 +12,7 @@ The store staff dashboard lives in [`../admin`](../admin). The REST API lives in
 
 - **Node.js 22+**
 - **Spring Boot API** running on port `8080` (see [`../backend`](../backend))
-- Optional: **Gemini API key** for Smart Recipes
+- Optional: **Gemini API key** in the backend (`GEMINI_API_KEY`) for Smart Recipes
 
 ---
 
@@ -26,7 +26,7 @@ npm run dev
 
 Open **http://127.0.0.1:3000**
 
-In local dev, `server.ts` proxies `/api/*` to the Spring Boot backend and handles `/api/recipes` (Smart Recipes) on the same origin. You do not need to set `VITE_API_BASE_URL` locally.
+In local dev, `server.ts` proxies `/api/*` (including Smart Recipes at `/api/ai/recipes`) to the Spring Boot backend. You do not need to set `VITE_API_BASE_URL` locally.
 
 Start the API first:
 
@@ -60,7 +60,6 @@ Copy `.env.example` to `.env` for local development.
 |----------|-------|---------------------|
 | `API_PROXY_TARGET` | `http://127.0.0.1:8080` | Not used (see `vercel.json` rewrites) |
 | `VITE_API_BASE_URL` | Leave unset (uses `/api` proxy) | **Not required** — `vercel.json` proxies `/api` to Cloud Run |
-| `GEMINI_API_KEY` | Smart Recipes via `server.ts` | Smart Recipes via `api/recipes.ts` |
 | `VITE_GOOGLE_CLIENT_ID` | Google Sign-In (must match backend) | Same |
 | `PORT` | `3000` | Set by Vercel |
 | `BIND_HOST` | `127.0.0.1` | Not used on Vercel |
@@ -80,14 +79,13 @@ On the backend, set `APP_FRONTEND_BASE_URL` to your deployed client URL (CORS + 
 
    | Variable | Value |
    |----------|--------|
-   | `GEMINI_API_KEY` | Optional — enables Smart Recipes |
    | `VITE_GOOGLE_CLIENT_ID` | If using Google Sign-In |
 
    **No `VITE_API_BASE_URL` needed.** [`vercel.json`](vercel.json) forwards `/api/*` to Cloud Run automatically.
 
 5. Redeploy after any config change.
 
-Smart Recipes runs as a Vercel serverless function at [`api/recipes.ts`](api/recipes.ts). All other API calls use same-origin `/api` (proxied to Cloud Run).
+All API calls, including Smart Recipes (`/api/ai/recipes`), use same-origin `/api` (proxied to Cloud Run). The Gemini key lives only in the backend.
 
 ---
 
@@ -111,8 +109,6 @@ Checkout flow: save delivery address → sync cart → create Stripe Checkout se
 
 ```text
 frontend/
-├── api/
-│   └── recipes.ts          # Vercel serverless — Smart Recipes (Gemini)
 ├── e2e/                    # Playwright tests
 ├── public/                 # Static assets (icons, etc.)
 ├── src/
@@ -136,7 +132,7 @@ frontend/
 - Delivery address saved to the API before checkout
 - Order history and status from the API
 - Post-delivery product reviews
-- Smart Recipes (Gemini) from cart contents
+- Smart Recipes (Gemini, via the backend) from cart contents
 - Dark / light / system theme
 - Honest empty / error states when the API is unreachable
 

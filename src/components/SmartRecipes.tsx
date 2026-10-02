@@ -11,7 +11,13 @@ interface Recipe {
   matchingIngredients: string[];
   missingIngredients: string[];
   instructions: string[];
+  /** In-stock catalog products the backend matched to the missing ingredients. */
+  shopProducts?: { id: string; name: string }[];
 }
+
+const API_BASE = String(
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || '/api',
+).replace(/\/$/, '');
 
 interface SmartRecipesProps {
   cart: CartItem[];
@@ -38,7 +44,7 @@ export default function SmartRecipes({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/recipes', {
+      const response = await fetch(`${API_BASE}/ai/recipes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -47,7 +53,8 @@ export default function SmartRecipes({
         signal,
       });
       if (!response.ok) {
-        throw new Error('Failed to fetch smart recipes');
+        const body = await response.json().catch(() => null);
+        throw new Error(typeof body?.message === 'string' ? body.message : 'Failed to fetch smart recipes');
       }
       const data = await response.json();
       if (signal.aborted) return;
@@ -149,11 +156,24 @@ export default function SmartRecipes({
     }
   };
 
-  const handleAddAllMissing = (missingIngredients: string[]) => {
+  const handleAddAllMissing = (recipe: Recipe) => {
+    const matched = (recipe.shopProducts ?? [])
+      .map(p => groceries.find(g => g.id === String(p.id)))
+      .filter((g): g is GroceryItem => Boolean(g));
+    if (matched.length > 0) {
+      matched.forEach(g => onAddToCart(g, 1, false));
+      onAddToast(
+        'Added Ingredients',
+        `Added ${matched.map(g => g.name).slice(0, 3).join(', ')}${matched.length > 3 ? '…' : ''} to your cart.`,
+        'success'
+      );
+      return;
+    }
+
     let addedCount = 0;
     let notFound: string[] = [];
 
-    missingIngredients.forEach(ing => {
+    recipe.missingIngredients.forEach(ing => {
       const match = findCatalogMatch(ing);
       if (match) {
         onAddToCart(match, 1, false);
@@ -355,7 +375,7 @@ export default function SmartRecipes({
 
                 {recipe.missingIngredients.length > 0 && (
                   <button
-                    onClick={() => handleAddAllMissing(recipe.missingIngredients)}
+                    onClick={() => handleAddAllMissing(recipe)}
                     className="w-full mt-2 py-2.5 bg-[#2d6a4f] hover:bg-[#40916c] text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Plus className="w-4 h-4 text-white stroke-[2.5px]" />
