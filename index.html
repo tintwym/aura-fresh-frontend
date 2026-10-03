@@ -20,6 +20,18 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Apply the theme before first paint (mirrors src/lib/theme.ts).
+      (function () {
+        try {
+          var saved = localStorage.getItem('aura-fresh-theme-v3') ? localStorage.getItem('aura-fresh-theme') : 'auto';
+          var hour = new Date().getHours();
+          var dark = saved === 'dark' || (saved !== 'light' && (hour < 6 || hour >= 18));
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

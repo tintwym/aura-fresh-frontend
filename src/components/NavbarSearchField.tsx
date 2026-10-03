@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Search, Mic, X } from 'lucide-react';
+import { Search, Mic, X, Sparkles } from 'lucide-react';
 
 type Props = {
   value: string;
   onChange: (value: string) => void;
+  /** Ask AI about the current text (Enter key or the sparkle button). */
+  onAskAi?: (query: string) => void;
   onAddToast: (title: string, msg: string, type: 'success' | 'warning' | 'info') => void;
   /** Scroll catalog into view on focus / typing */
   onActivate?: () => void;
@@ -13,6 +15,7 @@ type Props = {
 export default function NavbarSearchField({
   value,
   onChange,
+  onAskAi,
   onAddToast,
   onActivate,
   className = '',
@@ -89,6 +92,13 @@ export default function NavbarSearchField({
     }
   };
 
+  const askAi = () => {
+    const query = value.trim();
+    if (!query || !onAskAi) return;
+    onActivate?.();
+    onAskAi(query);
+  };
+
   return (
     <div className={`relative flex-1 min-w-0 max-w-xl mx-2 sm:mx-4 ${className}`}>
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5c6f66]/70 pointer-events-none" />
@@ -98,14 +108,20 @@ export default function NavbarSearchField({
         inputMode="search"
         enterKeyHint="search"
         autoComplete="off"
-        placeholder="Search produce, rice, tofu…"
+        placeholder={onAskAi ? 'Search, or ask AI: “spicy dinner”' : 'Search produce, rice, tofu…'}
         value={value}
         onFocus={() => onActivate?.()}
         onChange={(e) => {
           onActivate?.();
           onChange(e.target.value);
         }}
-        className="w-full pl-9 pr-16 py-2 sm:py-2.5 border border-[#2d6a4f]/15 dark:border-white/10 bg-white/90 dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] rounded-2xl text-sm placeholder:text-[#5c6f66]/55 focus:outline-hidden focus:ring-2 focus:ring-[#40916c]/35 transition-shadow"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            askAi();
+          }
+        }}
+        className="w-full pl-9 pr-24 py-2 sm:py-2.5 border border-[#2d6a4f]/15 dark:border-white/10 bg-white/90 dark:bg-[#121a16] text-[#1a2e24] dark:text-[#e7efe9] rounded-2xl text-sm placeholder:text-[#5c6f66]/55 focus:outline-hidden focus:ring-2 focus:ring-[#40916c]/35 transition-shadow"
       />
       <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
         {value ? (
@@ -116,6 +132,17 @@ export default function NavbarSearchField({
             aria-label="Clear search"
           >
             <X className="w-3.5 h-3.5" />
+          </button>
+        ) : null}
+        {value.trim() && onAskAi ? (
+          <button
+            type="button"
+            onClick={askAi}
+            className="p-1.5 rounded-xl text-[#2d6a4f] dark:text-[#95d5b2] hover:bg-[#d8f3dc]/60 dark:hover:bg-[#2d6a4f]/30 cursor-pointer"
+            title="Ask AI (Enter)"
+            aria-label="Ask AI about this search"
+          >
+            <Sparkles className="w-4 h-4" />
           </button>
         ) : null}
         <button

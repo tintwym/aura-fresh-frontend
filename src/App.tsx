@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import {
   Bell, ShoppingCart, Moon, Sun, MapPin,
-  Home, Truck, Mic, FileText, LogIn, Monitor, ArrowDown
+  Home, Truck, Mic, FileText, LogIn, SunMoon, ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,6 +24,8 @@ import OrderCelebrationModal from './components/OrderCelebrationModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import NavbarSearchField from './components/NavbarSearchField';
+import type { AiSearchState } from './components/AiSearchResults';
+import { aiSearch } from './lib/aiSearchApi';
 import PaymentSuccessPage from './components/PaymentSuccessPage';
 import StatusPage, {
   NotFoundPage,
@@ -64,35 +66,33 @@ import {
 import { submitReview } from './lib/reviewApi';
 import { fetchNotifications, markAllNotificationsRead } from './lib/notificationApi';
 import { AuthApiError } from './lib/authValidation';
+import { THEME_KEY, isNightTime, readThemePref, type ThemePref } from './lib/theme';
 
 export default function App() {
-  type ThemePref = 'system' | 'light' | 'dark';
-  const THEME_KEY = 'aura-fresh-theme';
-
-  const readThemePref = (): ThemePref => {
-    if (typeof window === 'undefined') return 'system';
-    // One-time migration: old toggle locked OS sync off — restore System as default.
-    const migrated = window.localStorage.getItem('aura-fresh-theme-v2');
-    if (!migrated) {
-      window.localStorage.setItem(THEME_KEY, 'system');
-      window.localStorage.setItem('aura-fresh-theme-v2', '1');
-      return 'system';
-    }
-    const saved = window.localStorage.getItem(THEME_KEY);
-    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
-    return 'system';
-  };
-
   const [themePref, setThemePref] = useState<ThemePref>(readThemePref);
-  const [systemDark, setSystemDark] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-  });
+  const [nightTime, setNightTime] = useState(isNightTime);
 
-  const isDarkMode = themePref === 'system' ? systemDark : themePref === 'dark';
+  const isDarkMode = themePref === 'auto' ? nightTime : themePref === 'dark';
 
   const [selectedZone, setSelectedZone] = useState('All Zones');
   const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+  const [aiSearchState, setAiSearchState] = useState<AiSearchState | null>(null);
+
+  const handleSearchChange = (value: string) => {
+    setCatalogSearchQuery(value);
+    if (!value.trim()) setAiSearchState(null);
+  };
+
+  const runAiSearch = async (query: string) => {
+    setAiSearchState({ query, status: 'loading' });
+    try {
+      const result = await aiSearch(query);
+      setAiSearchState((current) => (current?.query === query ? { query, status: 'done', result } : current));
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'AI search is unavailable right now.';
+      setAiSearchState((current) => (current?.query === query ? { query, status: 'error', error } : current));
+    }
+  };
   const [gdprBannerAccepted, setGdprBannerAccepted] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('aura-fresh-gdpr-consent') === '1';
@@ -105,23 +105,14 @@ export default function App() {
     }
   };
 
-  // Always track OS preference so “system” mode stays in sync
+  // Auto mode flips at sunrise/sunset hours, so re-check the clock while the tab is open.
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    setSystemDark(mediaQuery.matches);
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', onChange);
-    } else {
-      mediaQuery.addListener(onChange);
-    }
+    const update = () => setNightTime(isNightTime());
+    const timer = window.setInterval(update, 60_000);
+    document.addEventListener('visibilitychange', update);
     return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', onChange);
-      } else {
-        mediaQuery.removeListener(onChange);
-      }
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', update);
     };
   }, []);
 
@@ -132,19 +123,18 @@ export default function App() {
     root.style.colorScheme = isDarkMode ? 'dark' : 'light';
   }, [isDarkMode]);
 
-  // Cycle: System (auto) → Light → Dark → System
+  // Cycle: Auto → Light → Dark → Auto
   const toggleTheme = () => {
     setThemePref((prev) => {
-      const next: ThemePref =
-        prev === 'system' ? 'light' : prev === 'light' ? 'dark' : 'system';
+      const next: ThemePref = prev === 'auto' ? 'light' : prev === 'light' ? 'dark' : 'auto';
       window.localStorage.setItem(THEME_KEY, next);
       return next;
     });
   };
 
   const themeLabel =
-    themePref === 'system'
-      ? `Theme: System (${isDarkMode ? 'dark' : 'light'})`
+    themePref === 'auto'
+      ? `Theme: Auto — light by day, dark at night (now ${isDarkMode ? 'dark' : 'light'})`
       : themePref === 'dark'
         ? 'Theme: Dark'
         : 'Theme: Light';
@@ -441,6 +431,14 @@ export default function App() {
     });
   };
 
+  const cartQuantities = useMemo(() => {
+    const quantities: Record<string, number> = {};
+    for (const line of cart) {
+      if (!line.isSubscription) quantities[line.item.id] = line.quantity;
+    }
+    return quantities;
+  }, [cart]);
+
   const handleUpdateCartQty = (itemId: string, isSub: boolean, qty: number) => {
     if (qty <= 0) {
       handleRemoveFromCart(itemId, isSub);
@@ -719,26 +717,27 @@ export default function App() {
 
           <NavbarSearchField
             value={catalogSearchQuery}
-            onChange={setCatalogSearchQuery}
+            onChange={handleSearchChange}
+            onAskAi={runAiSearch}
             onAddToast={handleAddToast}
             onActivate={scrollToCatalogSearch}
           />
 
           {/* Nav Actions - Desktop & Mobile */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Theme toggle — cycles System (auto) → Light → Dark */}
+            {/* Theme toggle — cycles Auto (by time of day) → Light → Dark */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-2xl border border-[#2d6a4f]/15 dark:border-white/10 bg-white/70 dark:bg-[#121a16] hover:bg-white dark:hover:bg-[#1a2420] text-[#5c6f66] dark:text-[#8a9e94] cursor-pointer transition-colors"
               aria-label={themeLabel}
               title={themeLabel}
             >
-              {themePref === 'system' ? (
-                <Monitor className="w-4.5 h-4.5 text-[#2d6a4f]" />
-              ) : isDarkMode ? (
-                <Sun className="w-4.5 h-4.5 text-amber-300" />
+              {themePref === 'auto' ? (
+                <SunMoon className="w-4.5 h-4.5 text-[#2d6a4f] dark:text-[#95d5b2]" />
+              ) : themePref === 'dark' ? (
+                <Moon className="w-4.5 h-4.5 text-amber-300" />
               ) : (
-                <Moon className="w-4.5 h-4.5 text-[#5c6f66]" />
+                <Sun className="w-4.5 h-4.5 text-amber-500" />
               )}
             </button>
 
@@ -886,9 +885,14 @@ export default function App() {
               .finally(() => setCatalogLoading(false));
           }}
           onAddToCart={handleAddToCart}
+          cartQuantities={cartQuantities}
+          onUpdateCartQty={(itemId, qty) => handleUpdateCartQty(itemId, false, qty)}
           selectedZone={selectedZone}
           setSelectedZone={setSelectedZone}
           searchQuery={catalogSearchQuery}
+          aiSearch={aiSearchState}
+          onRetryAiSearch={() => aiSearchState && void runAiSearch(aiSearchState.query)}
+          onCloseAiSearch={() => setAiSearchState(null)}
           onAddToast={handleAddToast}
         />
         <SmartRecipes

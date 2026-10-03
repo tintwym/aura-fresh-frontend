@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  ShoppingCart, MapPin, WifiOff, Loader2, RefreshCw, Star,
+  MapPin, WifiOff, Loader2, RefreshCw,
 } from 'lucide-react';
 import { GroceryItem, DietaryRestriction } from '../types';
 import { DIETARY_OPTIONS, ZONE_OPTIONS } from '../data/groceries';
 import { fuzzySearchGroceries } from '../utils/fuzzySearch';
 import { motion, AnimatePresence } from 'motion/react';
 import { Select } from './Select';
+import AiSearchResults, { type AiSearchState } from './AiSearchResults';
+import ProductCard from './ProductCard';
 
 interface GroceryCatalogProps {
   groceries: GroceryItem[];
@@ -14,9 +16,15 @@ interface GroceryCatalogProps {
   error?: string | null;
   onRetry?: () => void;
   onAddToCart: (item: GroceryItem, qty: number, isSub: boolean, freq?: 'weekly' | 'biweekly' | 'monthly') => void;
+  /** Product id → quantity already in the cart. */
+  cartQuantities?: Record<string, number>;
+  onUpdateCartQty?: (itemId: string, qty: number) => void;
   selectedZone: string;
   setSelectedZone: (zone: string) => void;
   searchQuery: string;
+  aiSearch?: AiSearchState | null;
+  onRetryAiSearch?: () => void;
+  onCloseAiSearch?: () => void;
   onAddToast: (title: string, msg: string, type: 'success' | 'warning' | 'info') => void;
 }
 
@@ -26,13 +34,17 @@ export default function GroceryCatalog({
   error = null,
   onRetry,
   onAddToCart,
+  cartQuantities = {},
+  onUpdateCartQty = () => {},
   selectedZone,
   setSelectedZone,
   searchQuery,
+  aiSearch = null,
+  onRetryAiSearch = () => {},
+  onCloseAiSearch = () => {},
   onAddToast,
 }: GroceryCatalogProps) {
   const [selectedDietary, setSelectedDietary] = useState<DietaryRestriction[]>([]);
-  const [quantities, setQuantities] = useState<{ [itemId: string]: number }>({});
   const [isOffline, setIsOffline] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -85,13 +97,9 @@ export default function GroceryCatalog({
   }, [groceries, searchQuery, selectedDietary, selectedZone]);
 
   const handleAddToCartClick = (item: GroceryItem) => {
-    const qty = quantities[item.id] || 1;
-    if (item.stock < qty) {
-      onAddToast('Low stock', `Only ${item.stock} left.`, 'warning');
-      return;
-    }
-    onAddToCart(item, qty, false);
-    onAddToast('Added', `${qty}× ${item.name}`, 'success');
+    if (item.stock <= 0) return;
+    onAddToCart(item, 1, false);
+    onAddToast('Added', `1× ${item.name}`, 'success');
   };
 
   if (isLoading) {
@@ -225,7 +233,26 @@ export default function GroceryCatalog({
         </AnimatePresence>
       </div>
 
-      {filteredGroceries.length === 0 ? (
+      <AnimatePresence>
+        {aiSearch && (
+          <AiSearchResults
+            state={aiSearch}
+            groceries={groceries}
+            onAddToCart={(item) => {
+              onAddToCart(item, 1, false);
+              onAddToast('Added', `1× ${item.name}`, 'success');
+            }}
+            onRetry={onRetryAiSearch}
+            onClose={onCloseAiSearch}
+          />
+        )}
+      </AnimatePresence>
+
+      {filteredGroceries.length === 0 && aiSearch ? (
+        <p className="text-center text-sm text-[#5c6f66] dark:text-[#8a9e94]">
+          No product names match those exact words — see the AI picks above.
+        </p>
+      ) : filteredGroceries.length === 0 ? (
         <div className="py-16 text-center">
           <p className="font-display text-lg font-semibold text-[#1a2e24] dark:text-[#e7efe9]">
             Nothing matches
@@ -233,120 +260,17 @@ export default function GroceryCatalog({
           <p className="mt-1 text-sm text-[#5c6f66]">Try another search or clear diet filters.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-          {filteredGroceries.map((item, index) => {
-            const qty = quantities[item.id] || 1;
-            const out = item.stock === 0;
-            const low = item.stock > 0 && item.stock <= 5;
-
-            return (
-              <motion.article
-                key={item.id}
-                layout
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: Math.min(index * 0.035, 0.25),
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                className="group flex flex-col bg-white/90 dark:bg-[#121a16] rounded-2xl overflow-hidden shadow-market hover:shadow-market-hover transition-shadow duration-300"
-              >
-                <div className="relative aspect-[4/3] bg-[#e8f0ea] dark:bg-[#0c1410] overflow-hidden">
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                  />
-                  {out && (
-                    <span className="absolute inset-0 flex items-center justify-center bg-[#0c1410]/45 text-white text-xs font-semibold tracking-wide">
-                      Sold out
-                    </span>
-                  )}
-                  {!out && low && (
-                    <span className="absolute bottom-2 left-2 text-[10px] font-semibold text-white bg-[#1a2e24]/75 px-2 py-0.5 rounded-md">
-                      {item.stock} left
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col p-3.5 sm:p-4 gap-2">
-                  <div className="min-h-0">
-                    <h3 className="font-display font-semibold text-[15px] sm:text-base text-[#1a2e24] dark:text-[#e7efe9] leading-snug line-clamp-2">
-                      {item.name}
-                    </h3>
-                    <p className="mt-0.5 text-[11px] text-[#5c6f66] dark:text-[#8a9e94]">
-                      {item.unit}
-                      {item.rating > 0 && (
-                        <span className="inline-flex items-center gap-0.5 ml-2 text-[#1a2e24]/70 dark:text-[#e7efe9]/70">
-                          <Star className="w-3 h-3 fill-current" />
-                          {item.rating.toFixed(1)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="mt-auto flex items-baseline justify-between gap-2 pt-1">
-                    <p className="font-semibold text-[#1a2e24] dark:text-[#e7efe9] tabular-nums">
-                      <span className="text-base sm:text-lg">{item.price.toLocaleString()}</span>
-                      <span className="ml-1 text-[10px] font-medium text-[#5c6f66]">MMK</span>
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <div className="flex items-center rounded-xl border border-[#2d6a4f]/12 dark:border-white/10 overflow-hidden h-9 bg-[#eef4ef]/60 dark:bg-[#0c1410]">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setQuantities((prev) => ({
-                            ...prev,
-                            [item.id]: Math.max(1, (prev[item.id] || 1) - 1),
-                          }))
-                        }
-                        className="px-2.5 h-full text-[#5c6f66] hover:bg-[#d8f3dc]/50 font-medium"
-                        aria-label="Decrease quantity"
-                      >
-                        −
-                      </button>
-                      <span className="w-7 text-center text-xs font-semibold tabular-nums">{qty}</span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setQuantities((prev) => ({
-                            ...prev,
-                            [item.id]: Math.min(item.stock || 1, (prev[item.id] || 1) + 1),
-                          }))
-                        }
-                        disabled={out || qty >= item.stock}
-                        className="px-2.5 h-full text-[#5c6f66] hover:bg-[#d8f3dc]/50 font-medium disabled:opacity-40"
-                        aria-label="Increase quantity"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <motion.button
-                      type="button"
-                      disabled={out}
-                      onClick={() => handleAddToCartClick(item)}
-                      whileTap={out ? undefined : { scale: 0.97 }}
-                      className={`flex-1 h-9 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                        out
-                          ? 'bg-[#e8f0ea] dark:bg-[#1a2420] text-[#5c6f66]/50 cursor-not-allowed'
-                          : 'bg-[#2d6a4f] hover:bg-[#40916c] text-white'
-                      }`}
-                    >
-                      <ShoppingCart className="w-3.5 h-3.5" />
-                      Add
-                    </motion.button>
-                  </div>
-                </div>
-              </motion.article>
-            );
-          })}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
+          {filteredGroceries.map((item, index) => (
+            <ProductCard
+              key={item.id}
+              item={item}
+              index={index}
+              cartQty={cartQuantities[item.id] ?? 0}
+              onAdd={() => handleAddToCartClick(item)}
+              onSetQty={(qty) => onUpdateCartQty(item.id, qty)}
+            />
+          ))}
         </div>
       )}
     </div>
